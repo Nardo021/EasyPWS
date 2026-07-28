@@ -1,4 +1,4 @@
-"""Config flow scaffold for EasyPWS."""
+"""Config flow for EasyPWS."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_TOKEN
 
-from . import DOMAIN
+from .const import DOMAIN
 
 
 class EasyPWSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):

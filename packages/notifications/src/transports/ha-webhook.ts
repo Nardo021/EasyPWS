@@ -16,9 +16,13 @@ export class HomeAssistantWebhookTransport implements NotificationTransport {
     if (typeof url !== "string" || !url) {
       throw new Error("HA webhook transport requires config.url");
     }
-    // Scaffold: real HTTP client wiring lands with worker implementation.
-    void payload;
-    void url;
-    throw new Error("HomeAssistantWebhookTransport.send not implemented");
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`HA webhook failed: ${response.status}`);
+    }
   }
 }

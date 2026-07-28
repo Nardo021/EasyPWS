@@ -11,10 +11,9 @@
     "lint": "echo \"lint placeholder\""
   },
   "dependencies": {
-    "@easypws/contracts": "workspace:*",
+    "@easypws/database": "workspace:*",
     "@easypws/observability": "workspace:*",
-    "bullmq": "^5.34.0",
-    "ioredis": "^5.4.2"
+    "@easypws/services": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

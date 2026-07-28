@@ -58,7 +58,7 @@ function matchesRule(rule: WatchRule, ctx: RuleEvaluationContext): boolean {
     case "HISTORICAL_LOW":
       return (
         ctx.historicalLow !== undefined &&
-        ctx.currentPrice <= ctx.historicalLow
+        ctx.currentPrice < ctx.historicalLow
       );
     case "BACK_IN_STOCK":
       return ctx.previouslyInStock === false && ctx.currentlyInStock;

@@ -15,8 +15,18 @@ export class GenericWebhookTransport implements NotificationTransport {
     if (typeof url !== "string" || !url) {
       throw new Error("Generic webhook transport requires config.url");
     }
-    void payload;
-    void url;
-    throw new Error("GenericWebhookTransport.send not implemented");
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(typeof config["secret"] === "string"
+          ? { "X-EasyPWS-Signature": String(config["secret"]) }
+          : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(`Generic webhook failed: ${response.status}`);
+    }
   }
 }

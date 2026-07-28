@@ -22,7 +22,12 @@ export function discountPercentage(
   regularPrice: number | undefined,
   currentPrice: number,
 ): number | undefined {
-  if (regularPrice === undefined || regularPrice <= 0 || currentPrice > regularPrice) {
+  if (
+    regularPrice === undefined ||
+    regularPrice <= 0 ||
+    !Number.isFinite(currentPrice) ||
+    currentPrice >= regularPrice
+  ) {
     return undefined;
   }
   return roundMoney(((regularPrice - currentPrice) / regularPrice) * 100);

@@ -7,6 +7,10 @@ const log = createLogger("easypws-api");
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { logger: false });
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
   app.setGlobalPrefix("api/v1");
   const port = Number(process.env["API_PORT"] ?? 3001);
   await app.listen(port);

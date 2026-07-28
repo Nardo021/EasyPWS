@@ -7,7 +7,7 @@ export class HealthController {
     return {
       status: "ok",
       service: "easypws-api",
-      mode: "scaffold",
+      mode: "first-release",
       timestamp: new Date().toISOString(),
     };
   }

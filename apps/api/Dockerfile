@@ -12,6 +12,7 @@ COPY packages/rules/package.json packages/rules/
 COPY packages/notifications/package.json packages/notifications/
 COPY packages/database/package.json packages/database/
 COPY packages/observability/package.json packages/observability/
+COPY packages/services/package.json packages/services/
 RUN pnpm install --frozen-lockfile=false
 
 FROM deps AS build

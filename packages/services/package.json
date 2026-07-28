@@ -1,0 +1,35 @@
+{
+  "name": "@easypws/services",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"lint placeholder\""
+  },
+  "dependencies": {
+    "@easypws/adapters": "workspace:*",
+    "@easypws/contracts": "workspace:*",
+    "@easypws/core": "workspace:*",
+    "@easypws/database": "workspace:*",
+    "@easypws/notifications": "workspace:*",
+    "@easypws/observability": "workspace:*",
+    "@easypws/rules": "workspace:*",
+    "bullmq": "^5.34.0",
+    "drizzle-orm": "^0.38.3",
+    "ioredis": "^5.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

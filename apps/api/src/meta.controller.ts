@@ -4,15 +4,17 @@ import { createAdapterRegistry } from "@easypws/adapters";
 @Controller("meta")
 export class MetaController {
   @Get("adapters")
-  listAdapters() {
+  async listAdapters() {
     const registry = createAdapterRegistry();
-    return {
-      adapters: registry.list().map((a) => ({
-        retailer: a.retailer,
-        implemented: false,
-      })),
-      note: "Scaffold only — adapters throw until data sources are wired",
-    };
+    const adapters = [];
+    for (const adapter of registry.list()) {
+      const health = await adapter.healthCheck();
+      adapters.push({
+        retailer: adapter.retailer,
+        health,
+      });
+    }
+    return { adapters };
   }
 
   @Get("architecture")
@@ -22,12 +24,13 @@ export class MetaController {
         web: "Next.js + TypeScript",
         api: "NestJS",
         worker: "BullMQ",
-        scheduler: "BullMQ repeatable jobs",
-        database: "PostgreSQL",
+        scheduler: "BullMQ + due-listing poller",
+        database: "PostgreSQL + Drizzle",
         cacheQueue: "Redis",
       },
       deployment: "Docker Compose on Debian LXC (Proxmox)",
       ha: "Native custom integration under integrations/home-assistant",
+      firstRelease: ["coles", "url-import", "watchlist", "rules", "charts", "ha"],
     };
   }
 }

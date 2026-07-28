@@ -1,29 +1,33 @@
 # Roadmap
 
-Current milestone: **architecture docs + empty scaffold** (no production scrapers).
+## Done
 
-## Done (scaffold)
-
+### Scaffold
 - [x] Monorepo (pnpm workspaces)
 - [x] Shared contracts / domain types
-- [x] Adapter SDK stubs (Coles, Woolworths, generic)
-- [x] Rule engine skeleton + cooldown helpers
+- [x] Adapter SDK stubs
+- [x] Rule engine skeleton
 - [x] Notification dispatcher skeleton
 - [x] PostgreSQL schema migration
-- [x] Docker Compose (Postgres/Redis + app profiles)
-- [x] NestJS API health/meta endpoints
-- [x] Worker / scheduler process scaffolds
-- [x] Next.js placeholder Web UI
+- [x] Docker Compose
+- [x] NestJS / worker / scheduler / Next.js shells
 - [x] HA custom integration file tree
 
-## Next (implementation)
+### First release (Coles)
+- [x] Drizzle database client + bootstrap user/tokens
+- [x] API token auth (Bearer) for Web / HA
+- [x] Coles BFF adapter (`getProduct`, URL parse, health)
+- [x] URL import + watchlist CRUD + default rules
+- [x] BullMQ price_check worker + scheduler
+- [x] Append-only observations + rule evaluation + HA webhook notify
+- [x] Web UI: import, watchlist controls, ECharts history
+- [x] HA entities/services against `/api/v1/ha/*`
 
-1. Choose ORM/migrator and wire `@easypws/database`
-2. Authentik OIDC + API token / HA scoped token auth
-3. Coles adapter (JSON/API first)
-4. Product import-by-URL + watchlist CRUD
-5. BullMQ price_check pipeline + append observations
-6. Rule evaluation → HA webhook notifications
-7. Web UI: watchlist, charts (ECharts)
-8. Woolworths adapter
-9. Flesh out HA entities/services against live API
+## Next
+
+1. Authentik OIDC browser sessions (keep API tokens for HA)
+2. Coles search endpoint hardening / GraphQL fallback
+3. Woolworths adapter (validate platform abstraction)
+4. Per-product HA entity discovery on watchlist changes
+5. Object storage for raw response snapshots
+6. Rate-limit / adaptive backoff polish + adapter health dashboard

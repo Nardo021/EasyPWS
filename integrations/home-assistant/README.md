@@ -1,29 +1,35 @@
-# Home Assistant Integration (scaffold)
+# Home Assistant Integration
 
 Native custom component under `custom_components/easypws/`.
 
-## Install (later)
-
-Copy or symlink into HA:
+## Install
 
 ```bash
 ln -s /path/to/EasyPWS/integrations/home-assistant/custom_components/easypws \
   /config/custom_components/easypws
 ```
 
-Configure with EasyPWS API host + scoped HA API token.
+Restart HA, then add **EasyPWS** via UI:
 
-## Planned entities
+- Host: `http://<easypws-host>:3001`
+- Token: scoped `HA_API_TOKEN` from EasyPWS bootstrap logs
+
+## Entities
 
 - `sensor.easypws_watched_products`
 - `sensor.easypws_active_specials`
 - `sensor.easypws_average_discount`
 - `sensor.easypws_last_sync`
 - `binary_sensor.easypws_adapter_health`
-- Per-product price / stock / monitoring entities
+- Per product: current/regular/discount sensors, half-price & in-stock binaries, monitoring switch, refresh button
 
-## Planned services
+## Services
 
-See `services.yaml`: add / remove / pause / resume / refresh / set_target_price.
+- `easypws.add_product`
+- `easypws.remove_product`
+- `easypws.pause_product`
+- `easypws.resume_product`
+- `easypws.refresh_product`
+- `easypws.set_target_price`
 
-Search and charts stay in EasyPWS Web UI; HA focuses on status, quick control, and automations.
+Notifications: configure `HA_WEBHOOK_URL` on EasyPWS so price events POST into HA automations.
