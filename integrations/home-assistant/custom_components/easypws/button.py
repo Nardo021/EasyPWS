@@ -1,10 +1,10 @@
-"""Manual refresh buttons."""
+"""Refresh buttons with dynamic discovery."""
 
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -18,11 +18,24 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: EasyPWSCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [
-        EasyPWSRefreshButton(coordinator, entry, product["listingId"], product["name"])
-        for product in coordinator.data.get("products", [])
-    ]
-    async_add_entities(entities)
+    known: set[str] = set()
+
+    @callback
+    def _add_from_data() -> None:
+        entities: list[ButtonEntity] = []
+        for product in coordinator.data.get("products", []):
+            listing_id = product["listingId"]
+            if listing_id in known:
+                continue
+            known.add(listing_id)
+            entities.append(
+                EasyPWSRefreshButton(coordinator, entry, listing_id, product["name"])
+            )
+        if entities:
+            async_add_entities(entities)
+
+    _add_from_data()
+    entry.async_on_unload(coordinator.async_add_listener(_add_from_data))
 
 
 class EasyPWSRefreshButton(CoordinatorEntity[EasyPWSCoordinator], ButtonEntity):
@@ -44,6 +57,10 @@ class EasyPWSRefreshButton(CoordinatorEntity[EasyPWSCoordinator], ButtonEntity):
             if product.get("listingId") == self._listing_id:
                 return product
         return None
+
+    @property
+    def available(self) -> bool:
+        return self._product() is not None
 
     async def async_press(self) -> None:
         await self.coordinator.async_post(

@@ -17,26 +17,47 @@ Proxmox
 └── Monitoring (Uptime Kuma, optional Grafana)
 ```
 
-## Quick start (data plane only)
+## Quick start
 
 ```bash
 cp .env.example .env
-docker compose up -d postgres redis
+# set NEXT_PUBLIC_API_URL to a URL the browser can reach
+docker compose up -d --build
 ```
 
 Schema is applied on first Postgres boot via `infrastructure/migrations/001_init.sql`.
 
-## App services (scaffold images)
+### Bootstrap tokens
+
+On first API start with `BOOTSTRAP_ISSUE_TOKENS=true`:
 
 ```bash
-docker compose --profile apps up -d --build
+docker compose logs api | grep -E 'BOOTSTRAP_TOKEN|HA_API_TOKEN'
 ```
 
-App containers are under the `apps` profile so empty scaffolds do not block bringing up Postgres/Redis.
+Paste `BOOTSTRAP_TOKEN` into the Web UI. Use `HA_API_TOKEN` in the HA integration config.
+
+If logs were lost, set `BOOTSTRAP_ROTATE_SECRET` and call:
+
+```bash
+curl -X POST http://localhost:3001/api/v1/tokens/recover \
+  -H 'Content-Type: application/json' \
+  -d '{"secret":"<BOOTSTRAP_ROTATE_SECRET>"}'
+```
+
+### Important env
+
+| Variable | Notes |
+|----------|-------|
+| `NEXT_PUBLIC_API_URL` | Must be browser-reachable (not `api:3001` from your laptop) |
+| `COLES_STORE_ID` | Store-scoped pricing |
+| `HA_WEBHOOK_URL` | Optional notification channel |
+| `MANUAL_REFRESH_COOLDOWN_MS` | Default 60000 |
+| `SCHEDULER_STAGGER_MS` | Delay between enqueued due jobs |
 
 ## Domains (suggested)
 
 - `easypws.leoze.top` — Web
-- `api.price.leoze.top` or `price.leoze.top` — API
+- `api.price.leoze.top` — API
 
 Edge: Cloudflare → Cloudflare Access → Authentik → EasyPWS.

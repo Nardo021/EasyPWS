@@ -51,13 +51,14 @@ export class ColesAdapter extends StubRetailerAdapter {
   }
 
   override async searchProducts(query: string): Promise<AdapterSearchResult[]> {
-    try {
-      const payload = await this.client.searchJson(query);
-      return parseColesSearchPayload(payload).map(normalizeColesSearchResult);
-    } catch {
-      // Search endpoint shape varies; fall back to empty rather than failing hard.
-      return [];
+    const payload = await this.client.searchJson(query);
+    const items = parseColesSearchPayload(payload).map(normalizeColesSearchResult);
+    if (items.length === 0) {
+      throw new Error(
+        "Coles search returned no products (endpoint may be blocked or shape changed). Paste a product URL instead.",
+      );
     }
+    return items;
   }
 
   override async getCurrentPrice(retailerProductId: string): Promise<{

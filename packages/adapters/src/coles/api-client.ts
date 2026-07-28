@@ -3,6 +3,11 @@ export interface ColesApiClientOptions {
   subscriptionKey?: string;
   storeId?: string;
   userAgent?: string;
+  maxRetries?: number;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class ColesApiClient {
@@ -10,6 +15,7 @@ export class ColesApiClient {
   private readonly subscriptionKey: string;
   private readonly storeId: string;
   private readonly userAgent: string;
+  private readonly maxRetries: number;
 
   constructor(options: ColesApiClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? "https://www.coles.com.au";
@@ -20,7 +26,8 @@ export class ColesApiClient {
     this.storeId = options.storeId ?? process.env["COLES_STORE_ID"] ?? "647";
     this.userAgent =
       options.userAgent ??
-      "Mozilla/5.0 (compatible; EasyPWS/0.1; +https://github.com/Nardo021/EasyPWS)";
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    this.maxRetries = options.maxRetries ?? 3;
   }
 
   get defaultStoreId(): string {
@@ -30,57 +37,84 @@ export class ColesApiClient {
   async fetchProductJson(retailerProductId: string): Promise<unknown> {
     const url = new URL(`/api/bff/products/${encodeURIComponent(retailerProductId)}`, this.baseUrl);
     url.searchParams.set("storeId", this.storeId);
-
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": this.userAgent,
-        "Ocp-Apim-Subscription-Key": this.subscriptionKey,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Coles BFF ${response.status} for product ${retailerProductId}`);
-    }
-    return response.json();
+    return this.requestJson(url, `product ${retailerProductId}`);
   }
 
   async searchJson(query: string, page = 1): Promise<unknown> {
-    // Coles search via BFF-style endpoint used by the website.
     const url = new URL("/api/bff/products/search", this.baseUrl);
     url.searchParams.set("storeId", this.storeId);
     url.searchParams.set("searchTerm", query);
     url.searchParams.set("page", String(page));
-
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": this.userAgent,
-        "Ocp-Apim-Subscription-Key": this.subscriptionKey,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Coles search ${response.status} for query ${query}`);
-    }
-    return response.json();
+    return this.requestJson(url, `search ${query}`);
   }
 
   async ping(): Promise<{ latencyMs: number }> {
     const started = Date.now();
-    const url = new URL("/api/bff/products/8737163", this.baseUrl);
-    url.searchParams.set("storeId", this.storeId);
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": this.userAgent,
-        "Ocp-Apim-Subscription-Key": this.subscriptionKey,
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`Coles health check failed: ${response.status}`);
-    }
-    await response.json();
+    await this.fetchProductJson("8737163");
     return { latencyMs: Date.now() - started };
+  }
+
+  private async requestJson(url: URL, label: string): Promise<unknown> {
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+      try {
+        const response = await fetch(url, {
+          headers: {
+            Accept: "application/json",
+            "User-Agent": this.userAgent,
+            "Ocp-Apim-Subscription-Key": this.subscriptionKey,
+            Origin: this.baseUrl,
+            Referer: `${this.baseUrl}/`,
+          },
+        });
+
+        if (response.status === 429 || response.status === 503) {
+          const retryAfter = Number(response.headers.get("retry-after") ?? "");
+          const delayMs = Number.isFinite(retryAfter)
+            ? retryAfter * 1000
+            : 500 * 2 ** attempt;
+          lastError = new Error(`Coles ${response.status} for ${label}`);
+          if (attempt < this.maxRetries) {
+            await sleep(delayMs);
+            continue;
+          }
+          throw lastError;
+        }
+
+        if (!response.ok) {
+          throw new Error(`Coles HTTP ${response.status} for ${label}`);
+        }
+
+        const contentType = response.headers.get("content-type") ?? "";
+        const text = await response.text();
+        if (
+          !contentType.includes("application/json") ||
+          text.trimStart().startsWith("<") ||
+          text.includes("Incapsula") ||
+          text.includes("_Incapsula_Resource")
+        ) {
+          throw new Error(
+            `Coles returned non-JSON / bot challenge for ${label}. Try again later or adjust egress.`,
+          );
+        }
+
+        try {
+          return JSON.parse(text) as unknown;
+        } catch {
+          throw new Error(`Coles returned invalid JSON for ${label}`);
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        const retryable =
+          lastError.message.includes("429") ||
+          lastError.message.includes("503") ||
+          lastError.message.includes("fetch failed");
+        if (!retryable || attempt >= this.maxRetries) {
+          throw lastError;
+        }
+        await sleep(500 * 2 ** attempt);
+      }
+    }
+    throw lastError ?? new Error(`Coles request failed for ${label}`);
   }
 }

@@ -6,46 +6,51 @@ Scrapers, PostgreSQL, Redis, and the rule engine run **outside** HAOS. HA consum
 
 ## First-release features
 
-- Coles product URL import + BFF price fetch
+- Coles product URL import + BFF price fetch (search is best-effort; may be bot-blocked)
 - Watchlist with target price / any drop / half-price / historical low rules
 - Append-only price history + ECharts in Web UI
-- BullMQ worker + adaptive scheduler
-- HA summary entities, per-product sensors, monitoring switch, refresh button, and services
+- BullMQ worker + staggered scheduler
+- HA summary + dynamic per-product entities/services
+- Token list / rotate / recover paths
 
 ## Quick start
 
 ```bash
 cp .env.example .env
-corepack enable
-pnpm install
+# Ensure NEXT_PUBLIC_API_URL is reachable from your browser
+docker compose up -d --build
 
-docker compose up -d postgres redis
-# wait for healthy, then:
+# One-time tokens (first boot only):
+docker compose logs api | grep -E 'BOOTSTRAP_TOKEN|HA_API_TOKEN'
+```
+
+Local monorepo dev:
+
+```bash
+corepack enable && pnpm install
+docker compose up -d postgres redis   # or local Postgres/Redis
 BOOTSTRAP_ISSUE_TOKENS=true pnpm --filter @easypws/api dev
-# in other terminals:
 pnpm --filter @easypws/worker dev
 pnpm --filter @easypws/scheduler dev
 pnpm --filter @easypws/web dev
+pnpm test
 ```
 
-On first API boot with `BOOTSTRAP_ISSUE_TOKENS=true`, logs print one-time `BOOTSTRAP_TOKEN` and `HA_API_TOKEN`. Paste the bootstrap token into the Web UI.
-
-Full stack:
-
-```bash
-docker compose up -d --build
-```
+Token lost? Set `BOOTSTRAP_ROTATE_SECRET` and `POST /api/v1/tokens/recover`.
 
 ## API (Bearer token)
 
 | Method | Path | Purpose |
 |--------|------|---------|
+| GET | `/api/v1/auth/me` | current principal |
 | POST | `/api/v1/products/import` | `{ url, targetPrice? }` |
+| GET | `/api/v1/products/search?q=` | Coles search (may fail under bot protection) |
 | GET | `/api/v1/watchlists/items` | list monitored products |
-| PATCH | `/api/v1/watchlists/items/:id/status` | pause/resume |
-| POST | `/api/v1/watchlists/items/:id/refresh` | enqueue check |
+| PATCH | `/api/v1/watchlists/items/:id/target-price` | set target |
+| POST | `/api/v1/watchlists/items/:id/refresh` | enqueue check (rate-limited) |
 | GET | `/api/v1/prices/listings/:id/history` | chart points |
 | GET | `/api/v1/ha/summary` | HA coordinator payload |
+| POST | `/api/v1/tokens/recover` | rotate bootstrap tokens with shared secret |
 
 ## Docs
 

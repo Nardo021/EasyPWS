@@ -1,10 +1,10 @@
-"""Monitoring pause/resume switches."""
+"""Monitoring switches with dynamic discovery."""
 
 from __future__ import annotations
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -18,11 +18,24 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: EasyPWSCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [
-        EasyPWSMonitoringSwitch(coordinator, entry, product["listingId"], product["name"])
-        for product in coordinator.data.get("products", [])
-    ]
-    async_add_entities(entities)
+    known: set[str] = set()
+
+    @callback
+    def _add_from_data() -> None:
+        entities: list[SwitchEntity] = []
+        for product in coordinator.data.get("products", []):
+            listing_id = product["listingId"]
+            if listing_id in known:
+                continue
+            known.add(listing_id)
+            entities.append(
+                EasyPWSMonitoringSwitch(coordinator, entry, listing_id, product["name"])
+            )
+        if entities:
+            async_add_entities(entities)
+
+    _add_from_data()
+    entry.async_on_unload(coordinator.async_add_listener(_add_from_data))
 
 
 class EasyPWSMonitoringSwitch(CoordinatorEntity[EasyPWSCoordinator], SwitchEntity):
@@ -49,6 +62,10 @@ class EasyPWSMonitoringSwitch(CoordinatorEntity[EasyPWSCoordinator], SwitchEntit
     def is_on(self) -> bool:
         product = self._product()
         return bool(product and product.get("monitoring"))
+
+    @property
+    def available(self) -> bool:
+        return self._product() is not None
 
     async def async_turn_on(self, **kwargs) -> None:
         await self.coordinator.async_post(

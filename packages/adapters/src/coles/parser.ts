@@ -34,18 +34,50 @@ export function parseColesProductPayload(payload: unknown): ColesProductRaw {
   return payload as ColesProductRaw;
 }
 
+function asProductArray(value: unknown): ColesProductRaw[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item) => item && typeof item === "object") as ColesProductRaw[];
+}
+
+/** Best-effort extraction across evolving Coles BFF / GraphQL search shapes. */
 export function parseColesSearchPayload(payload: unknown): ColesProductRaw[] {
   if (!payload || typeof payload !== "object") {
     return [];
   }
   const root = payload as Record<string, unknown>;
-  const results =
-    (root["results"] as unknown) ??
-    (root["products"] as unknown) ??
-    (root["Items"] as unknown) ??
-    [];
-  if (!Array.isArray(results)) {
-    return [];
+
+  const direct = asProductArray(
+    root["results"] ?? root["products"] ?? root["Items"] ?? root["items"],
+  );
+  if (direct.length > 0) {
+    return direct;
   }
-  return results.filter((item) => item && typeof item === "object") as ColesProductRaw[];
+
+  const data = root["data"];
+  if (data && typeof data === "object") {
+    const d = data as Record<string, unknown>;
+    const search = d["search"] ?? d["searchProducts"] ?? d["productSearch"];
+    if (search && typeof search === "object") {
+      const s = search as Record<string, unknown>;
+      const nested = asProductArray(
+        s["results"] ?? s["products"] ?? s["items"] ?? s["productList"],
+      );
+      if (nested.length > 0) {
+        return nested;
+      }
+    }
+  }
+
+  const results = root["Results"];
+  if (results && typeof results === "object") {
+    const r = results as Record<string, unknown>;
+    const nested = asProductArray(r["Products"] ?? r["products"]);
+    if (nested.length > 0) {
+      return nested;
+    }
+  }
+
+  return [];
 }

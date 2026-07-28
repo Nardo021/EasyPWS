@@ -59,7 +59,11 @@ export class ProductsController {
     if (!q || q.trim().length < 2) {
       throw new BadRequestException("q must be at least 2 characters");
     }
-    const results = await this.products.search(q.trim(), retailer ?? "coles");
-    return { items: results };
+    try {
+      const results = await this.products.search(q.trim(), retailer ?? "coles");
+      return { items: results };
+    } catch (err) {
+      throw new BadRequestException(err instanceof Error ? err.message : String(err));
+    }
   }
 }

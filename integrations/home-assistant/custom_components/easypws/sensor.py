@@ -1,10 +1,10 @@
-"""Sensor platform for EasyPWS."""
+"""Sensor platform for EasyPWS with dynamic per-product entities."""
 
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -18,35 +18,52 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: EasyPWSCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[SensorEntity] = [
-        EasyPWSSummarySensor(coordinator, entry, "watched_products", "EasyPWS Watched Products"),
-        EasyPWSSummarySensor(coordinator, entry, "active_specials", "EasyPWS Active Specials"),
-        EasyPWSSummarySensor(coordinator, entry, "average_discount", "EasyPWS Average Discount"),
-        EasyPWSSummarySensor(coordinator, entry, "last_sync", "EasyPWS Last Sync"),
-    ]
-    for product in coordinator.data.get("products", []):
-        listing_id = product["listingId"]
-        name = product["name"]
-        entities.extend(
-            [
-                EasyPWSProductSensor(
-                    coordinator, entry, listing_id, name, "currentPrice", "Current Price", "AUD"
-                ),
-                EasyPWSProductSensor(
-                    coordinator, entry, listing_id, name, "regularPrice", "Regular Price", "AUD"
-                ),
-                EasyPWSProductSensor(
-                    coordinator,
-                    entry,
-                    listing_id,
-                    name,
-                    "discountPercentage",
-                    "Discount",
-                    "%",
-                ),
-            ]
-        )
-    async_add_entities(entities)
+    known: set[str] = set()
+
+    def _summary_entities() -> list[SensorEntity]:
+        return [
+            EasyPWSSummarySensor(
+                coordinator, entry, "watched_products", "EasyPWS Watched Products"
+            ),
+            EasyPWSSummarySensor(
+                coordinator, entry, "active_specials", "EasyPWS Active Specials"
+            ),
+            EasyPWSSummarySensor(
+                coordinator, entry, "average_discount", "EasyPWS Average Discount"
+            ),
+            EasyPWSSummarySensor(coordinator, entry, "last_sync", "EasyPWS Last Sync"),
+        ]
+
+    def _product_entities(listing_id: str, name: str) -> list[SensorEntity]:
+        return [
+            EasyPWSProductSensor(
+                coordinator, entry, listing_id, name, "currentPrice", "Current Price", "AUD"
+            ),
+            EasyPWSProductSensor(
+                coordinator, entry, listing_id, name, "regularPrice", "Regular Price", "AUD"
+            ),
+            EasyPWSProductSensor(
+                coordinator, entry, listing_id, name, "discountPercentage", "Discount", "%"
+            ),
+        ]
+
+    @callback
+    def _add_from_data() -> None:
+        entities: list[SensorEntity] = []
+        if "summary" not in known:
+            entities.extend(_summary_entities())
+            known.add("summary")
+        for product in coordinator.data.get("products", []):
+            listing_id = product["listingId"]
+            if listing_id in known:
+                continue
+            known.add(listing_id)
+            entities.extend(_product_entities(listing_id, product["name"]))
+        if entities:
+            async_add_entities(entities)
+
+    _add_from_data()
+    entry.async_on_unload(coordinator.async_add_listener(_add_from_data))
 
 
 class EasyPWSSummarySensor(CoordinatorEntity[EasyPWSCoordinator], SensorEntity):
@@ -105,6 +122,10 @@ class EasyPWSProductSensor(CoordinatorEntity[EasyPWSCoordinator], SensorEntity):
     def native_value(self):
         product = self._product()
         return None if product is None else product.get(self._field)
+
+    @property
+    def available(self) -> bool:
+        return self._product() is not None
 
     @property
     def device_info(self):

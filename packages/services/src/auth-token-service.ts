@@ -89,4 +89,71 @@ export class AuthTokenService {
   hasScope(principal: AuthPrincipal, scope: ApiTokenScope): boolean {
     return principal.scopes.includes(scope) || principal.scopes.includes("admin");
   }
+
+  async listTokens(userId: string) {
+    const rows = await this.db
+      .select({
+        id: apiTokens.id,
+        name: apiTokens.name,
+        scopes: apiTokens.scopes,
+        tokenPrefix: apiTokens.tokenPrefix,
+        createdAt: apiTokens.createdAt,
+        lastUsedAt: apiTokens.lastUsedAt,
+        revokedAt: apiTokens.revokedAt,
+      })
+      .from(apiTokens)
+      .where(eq(apiTokens.userId, userId));
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      scopes: r.scopes,
+      tokenPrefix: r.tokenPrefix,
+      createdAt: r.createdAt.toISOString(),
+      lastUsedAt: r.lastUsedAt?.toISOString(),
+      revoked: Boolean(r.revokedAt),
+    }));
+  }
+
+  async revokeToken(userId: string, tokenId: string): Promise<void> {
+    await this.db
+      .update(apiTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(apiTokens.userId, userId), eq(apiTokens.id, tokenId)));
+  }
+
+  async findUserIdByEmail(email: string): Promise<string | null> {
+    const row = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
+    return row[0]?.id ?? null;
+  }
+
+  /** Rotate bootstrap admin + HA tokens (revokes previous non-revoked tokens with those names). */
+  async rotateBootstrapTokens(userId: string): Promise<{
+    bootstrapToken: string;
+    haToken: string;
+  }> {
+    const existing = await this.db
+      .select()
+      .from(apiTokens)
+      .where(and(eq(apiTokens.userId, userId), isNull(apiTokens.revokedAt)));
+    for (const row of existing) {
+      if (row.name === "Bootstrap admin" || row.name === "Home Assistant") {
+        await this.db
+          .update(apiTokens)
+          .set({ revokedAt: new Date() })
+          .where(eq(apiTokens.id, row.id));
+      }
+    }
+    const bootstrap = await this.createToken({
+      userId,
+      name: "Bootstrap admin",
+      scopes: ["read", "write", "admin"],
+    });
+    const ha = await this.createToken({
+      userId,
+      name: "Home Assistant",
+      scopes: ["read", "write", "ha_integration"],
+    });
+    // Prefer epws_ha_ prefix for HA token readability
+    return { bootstrapToken: bootstrap.token, haToken: ha.token };
+  }
 }

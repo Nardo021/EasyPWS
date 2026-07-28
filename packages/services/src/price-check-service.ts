@@ -99,28 +99,47 @@ export class PriceCheckService {
 
     const adapter = this.adapters.get(row.listing.retailer as import("@easypws/contracts").RetailerId);
     let details;
+    const started = Date.now();
     try {
       details = await adapter.getProduct(row.listing.retailerProductId);
-      const health = await adapter.healthCheck();
+      // Record health from the real fetch — avoid a second Coles round-trip.
       await this.db
         .insert(adapterHealth)
         .values({
           retailer: row.listing.retailer,
-          status: health.status,
-          latencyMs: health.latencyMs,
-          message: health.message,
-          checkedAt: new Date(health.checkedAt),
+          status: "healthy",
+          latencyMs: Date.now() - started,
+          message: null,
+          checkedAt: new Date(),
         })
         .onConflictDoUpdate({
           target: adapterHealth.retailer,
           set: {
-            status: health.status,
-            latencyMs: health.latencyMs,
-            message: health.message,
-            checkedAt: new Date(health.checkedAt),
+            status: "healthy",
+            latencyMs: Date.now() - started,
+            message: null,
+            checkedAt: new Date(),
           },
         });
     } catch (err) {
+      await this.db
+        .insert(adapterHealth)
+        .values({
+          retailer: row.listing.retailer,
+          status: "down",
+          latencyMs: Date.now() - started,
+          message: err instanceof Error ? err.message : String(err),
+          checkedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: adapterHealth.retailer,
+          set: {
+            status: "down",
+            latencyMs: Date.now() - started,
+            message: err instanceof Error ? err.message : String(err),
+            checkedAt: new Date(),
+          },
+        });
       await this.db
         .update(retailerListings)
         .set({

@@ -2,26 +2,37 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
+  clearStoredToken,
   easypwsApi,
   getStoredToken,
+  maskToken,
   setStoredToken,
   type PricePoint,
+  type SearchResult,
   type WatchlistItem,
 } from "../lib/api";
 import { PriceChart } from "../components/PriceChart";
 
 export default function HomePage() {
-  const [token, setToken] = useState("");
+  const [tokenInput, setTokenInput] = useState("");
+  const [savedToken, setSavedToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [url, setUrl] = useState("");
   const [target, setTarget] = useState("");
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [points, setPoints] = useState<PricePoint[]>([]);
+  const [targetDrafts, setTargetDrafts] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
-    setToken(getStoredToken());
+    const existing = getStoredToken();
+    setSavedToken(existing);
+    setTokenInput(existing);
   }, []);
 
   const selectedItem = useMemo(
@@ -35,9 +46,21 @@ export default function HomePage() {
       try {
         const data = await easypwsApi.listWatchlist();
         setItems(data.items);
+        setTargetDrafts((prev) => {
+          const next = { ...prev };
+          for (const item of data.items) {
+            if (next[item.watchlistItemId] === undefined) {
+              next[item.watchlistItemId] =
+                item.targetPrice !== undefined ? String(item.targetPrice) : "";
+            }
+          }
+          return next;
+        });
         if (!selected && data.items[0]) {
           setSelected(data.items[0].listingId);
         }
+        const me = await easypwsApi.me();
+        setInfo(`已登录 ${me.email}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -45,11 +68,11 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    if (token) {
+    if (savedToken) {
       refreshList();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [savedToken]);
 
   useEffect(() => {
     if (!selected) {
@@ -72,23 +95,128 @@ export default function HomePage() {
 
       <section className="row">
         <input
-          placeholder="API Bearer Token"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
+          type={showToken ? "text" : "password"}
+          placeholder="API Bearer Token（BOOTSTRAP_TOKEN）"
+          value={tokenInput}
+          onChange={(e) => setTokenInput(e.target.value)}
+          autoComplete="off"
         />
         <button
           type="button"
           className="secondary"
+          onClick={() => setShowToken((v) => !v)}
+        >
+          {showToken ? "隐藏" : "显示"}
+        </button>
+        <button
+          type="button"
+          className="secondary"
           onClick={() => {
-            setStoredToken(token.trim());
-            refreshList();
+            const next = tokenInput.trim();
+            setStoredToken(next);
+            setSavedToken(next);
+            setInfo(next ? `已保存 ${maskToken(next)}` : "已清除 Token");
+            if (next) {
+              refreshList();
+            } else {
+              setItems([]);
+            }
           }}
         >
-          保存 Token
+          保存
         </button>
+        <button
+          type="button"
+          className="danger"
+          onClick={() => {
+            clearStoredToken();
+            setTokenInput("");
+            setSavedToken("");
+            setItems([]);
+            setInfo("已清除本地 Token");
+          }}
+        >
+          清除
+        </button>
+      </section>
+      {savedToken ? (
+        <p className="meta">当前 Token：{maskToken(savedToken)}</p>
+      ) : (
+        <p className="meta">
+          首次部署：`docker compose logs api | grep BOOTSTRAP_TOKEN`
+        </p>
+      )}
+      {info ? <p className="meta">{info}</p> : null}
+
+      <section className="panel">
+        <h2 className="section-title">搜索 Coles</h2>
+        <div className="row">
+          <input
+            placeholder="关键词（若被风控拦截请改用 URL 导入）"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <button
+            type="button"
+            disabled={pending || query.trim().length < 2}
+            onClick={() => {
+              startTransition(async () => {
+                setError(null);
+                try {
+                  const data = await easypwsApi.search(query.trim());
+                  setSearchResults(data.items);
+                } catch (err) {
+                  setSearchResults([]);
+                  setError(err instanceof Error ? err.message : String(err));
+                }
+              });
+            }}
+          >
+            搜索
+          </button>
+        </div>
+        {searchResults.length > 0 ? (
+          <div className="search-list">
+            {searchResults.map((r) => (
+              <div key={r.retailerProductId} className="search-item">
+                <div>
+                  <strong>
+                    {[r.brand, r.name, r.size].filter(Boolean).join(" ")}
+                  </strong>
+                  <div className="meta">
+                    {r.currentPrice !== undefined ? `$${r.currentPrice}` : "—"} ·{" "}
+                    <a href={r.productUrl} target="_blank" rel="noreferrer">
+                      商品页
+                    </a>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setUrl(r.productUrl);
+                    startTransition(async () => {
+                      setError(null);
+                      try {
+                        await easypwsApi.importProduct(r.productUrl);
+                        refreshList();
+                        setInfo(`已加入监控：${r.name}`);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : String(err));
+                      }
+                    });
+                  }}
+                >
+                  监控
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="panel">
+        <h2 className="section-title">URL 导入</h2>
         <div className="row">
           <input
             placeholder="粘贴 Coles 商品 URL"
@@ -128,6 +256,7 @@ export default function HomePage() {
       </section>
 
       <section className="panel">
+        <h2 className="section-title">Watchlist</h2>
         {items.length === 0 ? (
           <p className="meta">还没有监控商品。先保存 Token，再粘贴 Coles URL。</p>
         ) : (
@@ -150,18 +279,50 @@ export default function HomePage() {
                     ? ` · -${item.discountPercentage}%`
                     : ""}
                   <br />
-                  历史最低 {item.historicalLow ?? "—"} · 目标{" "}
-                  {item.targetPrice ?? "—"} ·{" "}
+                  历史最低 {item.historicalLow ?? "—"} ·{" "}
                   {item.monitoringStatus === "active" ? "监控中" : "已暂停"}
                   <br />
                   <a href={item.productUrl} target="_blank" rel="noreferrer">
                     打开商品页
                   </a>
                 </div>
+                <div className="row" style={{ marginTop: "0.6rem" }}>
+                  <input
+                    placeholder="目标价"
+                    value={targetDrafts[item.watchlistItemId] ?? ""}
+                    onChange={(e) =>
+                      setTargetDrafts((prev) => ({
+                        ...prev,
+                        [item.watchlistItemId]: e.target.value,
+                      }))
+                    }
+                    style={{ maxWidth: 120 }}
+                  />
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      const value = Number(targetDrafts[item.watchlistItemId]);
+                      if (!Number.isFinite(value)) {
+                        setError("目标价必须是数字");
+                        return;
+                      }
+                      startTransition(async () => {
+                        setError(null);
+                        await easypwsApi.setTarget(item.watchlistItemId, value);
+                        refreshList();
+                      });
+                    }}
+                  >
+                    设目标价
+                  </button>
+                </div>
               </div>
               <div>
                 <div className="price">
-                  {item.currentPrice !== undefined ? `$${item.currentPrice.toFixed(2)}` : "—"}
+                  {item.currentPrice !== undefined
+                    ? `$${item.currentPrice.toFixed(2)}`
+                    : "—"}
                 </div>
                 <div className="actions">
                   <button
@@ -169,7 +330,13 @@ export default function HomePage() {
                     className="secondary"
                     onClick={() =>
                       startTransition(async () => {
-                        await easypwsApi.refresh(item.watchlistItemId);
+                        setError(null);
+                        try {
+                          await easypwsApi.refresh(item.watchlistItemId);
+                          setInfo("已排队刷新");
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : String(err));
+                        }
                       })
                     }
                   >
@@ -211,9 +378,7 @@ export default function HomePage() {
 
       {selectedItem ? (
         <section className="panel">
-          <h2 style={{ margin: 0, fontFamily: "var(--font-display)" }}>
-            {selectedItem.productName}
-          </h2>
+          <h2 className="section-title">{selectedItem.productName}</h2>
           <p className="meta">价格走势（append-only observations）</p>
           <PriceChart points={points} />
         </section>

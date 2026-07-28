@@ -6,11 +6,16 @@ const log = createLogger("easypws-scheduler");
 
 async function tick(priceChecks: PriceCheckService): Promise<void> {
   const due = await priceChecks.listDueListings(100);
-  for (const listingId of due) {
-    await enqueuePriceCheck(listingId, { priority: 50 });
+  const staggerMs = Number(process.env["SCHEDULER_STAGGER_MS"] ?? 1500);
+  for (let i = 0; i < due.length; i += 1) {
+    const listingId = due[i]!;
+    await enqueuePriceCheck(listingId, {
+      priority: 50,
+      delayMs: i * staggerMs,
+    });
   }
   if (due.length > 0) {
-    log.info("Enqueued due listings", { count: due.length });
+    log.info("Enqueued due listings", { count: due.length, staggerMs });
   }
 }
 

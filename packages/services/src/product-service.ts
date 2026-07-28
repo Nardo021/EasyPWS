@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type {
   AdapterProductDetails,
   ParsedProductUrl,
@@ -114,16 +114,31 @@ export class ProductService {
     }
 
     if (details.currentPrice !== undefined) {
-      await this.db.insert(priceObservations).values({
-        id: createId("pobs"),
-        listingId,
-        price: details.currentPrice.toFixed(2),
-        regularPrice: details.regularPrice?.toFixed(2),
-        unitPrice: details.unitPrice?.toFixed(4),
-        promotionType: details.promotionType,
-        inStock: details.inStock,
-        source: "adapter_api",
-      });
+      const latest = await this.db
+        .select()
+        .from(priceObservations)
+        .where(eq(priceObservations.listingId, listingId))
+        .orderBy(sql`${priceObservations.observedAt} desc`)
+        .limit(1);
+      const prev = latest[0];
+      const changed =
+        !prev ||
+        num(prev.price) !== details.currentPrice ||
+        num(prev.regularPrice) !== details.regularPrice ||
+        prev.inStock !== details.inStock ||
+        prev.promotionType !== details.promotionType;
+      if (changed) {
+        await this.db.insert(priceObservations).values({
+          id: createId("pobs"),
+          listingId,
+          price: details.currentPrice.toFixed(2),
+          regularPrice: details.regularPrice?.toFixed(2),
+          unitPrice: details.unitPrice?.toFixed(4),
+          promotionType: details.promotionType,
+          inStock: details.inStock,
+          source: "adapter_api",
+        });
+      }
     }
 
     await enqueuePriceCheck(listingId, { priority: 1 });

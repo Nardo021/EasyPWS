@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "EasyPWS",
+        "description": "Connect to your EasyPWS API using a scoped HA token.",
+        "data": {
+          "host": "API host",
+          "token": "API token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to EasyPWS API",
+      "invalid_auth": "Invalid API token"
+    },
+    "abort": {
+      "already_configured": "EasyPWS is already configured"
+    }
+  }
+}

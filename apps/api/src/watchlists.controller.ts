@@ -15,6 +15,9 @@ import { CurrentUser } from "./auth/current-user.decorator.js";
 import type { AuthPrincipal } from "./auth/auth.types.js";
 import { db } from "./db.js";
 
+const REFRESH_COOLDOWN_MS = Number(process.env["MANUAL_REFRESH_COOLDOWN_MS"] ?? 60_000);
+const lastManualRefresh = new Map<string, number>();
+
 @Controller("watchlists")
 @UseGuards(AuthGuard)
 export class WatchlistsController {
@@ -58,6 +61,15 @@ export class WatchlistsController {
     if (!item) {
       throw new BadRequestException("item not found");
     }
+    const key = `${user.userId}:${item.listingId}`;
+    const last = lastManualRefresh.get(key) ?? 0;
+    const elapsed = Date.now() - last;
+    if (elapsed < REFRESH_COOLDOWN_MS) {
+      throw new BadRequestException(
+        `Manual refresh rate-limited. Retry in ${Math.ceil((REFRESH_COOLDOWN_MS - elapsed) / 1000)}s`,
+      );
+    }
+    lastManualRefresh.set(key, Date.now());
     await enqueuePriceCheck(item.listingId, { priority: 1 });
     return { ok: true, listingId: item.listingId };
   }

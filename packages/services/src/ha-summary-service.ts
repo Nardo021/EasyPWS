@@ -67,7 +67,10 @@ export class HaSummaryService {
     });
 
     const healthRows = await this.db.select().from(adapterHealth);
-    const adapterHealthy = healthRows.some((h) => h.status === "healthy");
+    const coles = healthRows.find((h) => h.retailer === "coles");
+    const adapterHealthy = coles
+      ? coles.status === "healthy"
+      : healthRows.some((h) => h.status === "healthy");
 
     return {
       watched_products: productsOut.length,

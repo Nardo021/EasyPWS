@@ -1,10 +1,10 @@
-"""Binary sensors for EasyPWS."""
+"""Binary sensors with dynamic per-product discovery."""
 
 from __future__ import annotations
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -18,23 +18,36 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: EasyPWSCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[BinarySensorEntity] = [
-        EasyPWSAdapterHealth(coordinator, entry),
-    ]
-    for product in coordinator.data.get("products", []):
-        listing_id = product["listingId"]
-        name = product["name"]
-        entities.extend(
-            [
-                EasyPWSProductBinary(
-                    coordinator, entry, listing_id, name, "halfPrice", "Half Price"
-                ),
-                EasyPWSProductBinary(
-                    coordinator, entry, listing_id, name, "inStock", "In Stock"
-                ),
-            ]
-        )
-    async_add_entities(entities)
+    known: set[str] = set()
+
+    @callback
+    def _add_from_data() -> None:
+        entities: list[BinarySensorEntity] = []
+        if "adapter" not in known:
+            entities.append(EasyPWSAdapterHealth(coordinator, entry))
+            known.add("adapter")
+        for product in coordinator.data.get("products", []):
+            listing_id = product["listingId"]
+            key = f"bin_{listing_id}"
+            if key in known:
+                continue
+            known.add(key)
+            name = product["name"]
+            entities.extend(
+                [
+                    EasyPWSProductBinary(
+                        coordinator, entry, listing_id, name, "halfPrice", "Half Price"
+                    ),
+                    EasyPWSProductBinary(
+                        coordinator, entry, listing_id, name, "inStock", "In Stock"
+                    ),
+                ]
+            )
+        if entities:
+            async_add_entities(entities)
+
+    _add_from_data()
+    entry.async_on_unload(coordinator.async_add_listener(_add_from_data))
 
 
 class EasyPWSAdapterHealth(CoordinatorEntity[EasyPWSCoordinator], BinarySensorEntity):
@@ -47,7 +60,10 @@ class EasyPWSAdapterHealth(CoordinatorEntity[EasyPWSCoordinator], BinarySensorEn
 
     @property
     def is_on(self) -> bool:
-        return bool(self.coordinator.data.get("adapter_healthy"))
+        adapters = self.coordinator.data.get("adapters") or []
+        if not adapters:
+            return bool(self.coordinator.data.get("adapter_healthy"))
+        return any(a.get("status") == "healthy" for a in adapters)
 
     @property
     def device_info(self):
@@ -85,6 +101,10 @@ class EasyPWSProductBinary(CoordinatorEntity[EasyPWSCoordinator], BinarySensorEn
     def is_on(self) -> bool:
         product = self._product()
         return bool(product.get(self._field)) if product else False
+
+    @property
+    def available(self) -> bool:
+        return self._product() is not None
 
     @property
     def device_info(self):

@@ -8,6 +8,7 @@ import { WatchlistsController } from "./watchlists.controller.js";
 import { PricesController } from "./prices.controller.js";
 import { HaController } from "./ha.controller.js";
 import { TokensController } from "./tokens.controller.js";
+import { MeController } from "./auth/me.controller.js";
 import { db } from "./db.js";
 
 const log = createLogger("easypws-api");
@@ -21,6 +22,7 @@ const log = createLogger("easypws-api");
     PricesController,
     HaController,
     TokensController,
+    MeController,
   ],
 })
 export class AppModule implements OnModuleInit {

@@ -12,6 +12,20 @@ export function setStoredToken(token: string): void {
   window.localStorage.setItem("easypws_token", token);
 }
 
+export function clearStoredToken(): void {
+  window.localStorage.removeItem("easypws_token");
+}
+
+export function maskToken(token: string): string {
+  if (!token) {
+    return "";
+  }
+  if (token.length <= 12) {
+    return "••••••••";
+  }
+  return `${token.slice(0, 8)}…${token.slice(-4)}`;
+}
+
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getStoredToken();
   const response = await fetch(`${API_BASE}/api/v1${path}`, {
@@ -23,8 +37,19 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("未授权：请粘贴 API 日志中的 BOOTSTRAP_TOKEN 并保存");
+    }
     const text = await response.text();
-    throw new Error(text || `HTTP ${response.status}`);
+    try {
+      const json = JSON.parse(text) as { message?: string };
+      throw new Error(json.message || text || `HTTP ${response.status}`);
+    } catch (err) {
+      if (err instanceof Error && err.message !== text) {
+        throw err;
+      }
+      throw new Error(text || `HTTP ${response.status}`);
+    }
   }
   return response.json() as Promise<T>;
 }
@@ -54,7 +79,19 @@ export interface PricePoint {
   promotionType: string;
 }
 
+export interface SearchResult {
+  retailerProductId: string;
+  name: string;
+  brand?: string;
+  size?: string;
+  productUrl: string;
+  currentPrice?: number;
+  regularPrice?: number;
+  imageUrl?: string;
+}
+
 export const easypwsApi = {
+  me: () => api<{ email: string; scopes: string[] }>("/auth/me"),
   listWatchlist: () => api<{ items: WatchlistItem[] }>("/watchlists/items"),
   importProduct: (url: string, targetPrice?: number) =>
     api("/products/import", {
@@ -62,18 +99,14 @@ export const easypwsApi = {
       body: JSON.stringify({ url, targetPrice }),
     }),
   search: (q: string) =>
-    api<{ items: Array<{ retailerProductId: string; name: string; productUrl: string; currentPrice?: number }> }>(
-      `/products/search?q=${encodeURIComponent(q)}`,
-    ),
+    api<{ items: SearchResult[] }>(`/products/search?q=${encodeURIComponent(q)}`),
   setStatus: (id: string, status: "active" | "paused") =>
     api(`/watchlists/items/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
-  remove: (id: string) =>
-    api(`/watchlists/items/${id}`, { method: "DELETE" }),
-  refresh: (id: string) =>
-    api(`/watchlists/items/${id}/refresh`, { method: "POST" }),
+  remove: (id: string) => api(`/watchlists/items/${id}`, { method: "DELETE" }),
+  refresh: (id: string) => api(`/watchlists/items/${id}/refresh`, { method: "POST" }),
   setTarget: (id: string, targetPrice: number) =>
     api(`/watchlists/items/${id}/target-price`, {
       method: "PATCH",
