@@ -1,0 +1,24 @@
+{
+  "name": "easypws",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Easy Price Watch Service — self-hosted multi-retailer price monitoring platform",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev:api": "pnpm --filter @easypws/api dev",
+    "dev:web": "pnpm --filter @easypws/web dev",
+    "dev:worker": "pnpm --filter @easypws/worker dev",
+    "dev:scheduler": "pnpm --filter @easypws/scheduler dev",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "db:migrate": "pnpm --filter @easypws/database migrate"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

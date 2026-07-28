@@ -1,0 +1,44 @@
+add_product:
+  name: Add product
+  description: Import a retailer product URL into EasyPWS and optionally start monitoring.
+  fields:
+    url:
+      required: true
+      example: "https://www.coles.com.au/product/..."
+    target_price:
+      required: false
+      example: 3.5
+
+remove_product:
+  name: Remove product
+  description: Stop monitoring and remove a watchlist item.
+  fields:
+    listing_id:
+      required: true
+
+pause_product:
+  name: Pause product
+  fields:
+    listing_id:
+      required: true
+
+resume_product:
+  name: Resume product
+  fields:
+    listing_id:
+      required: true
+
+refresh_product:
+  name: Refresh product
+  fields:
+    listing_id:
+      required: true
+
+set_target_price:
+  name: Set target price
+  fields:
+    listing_id:
+      required: true
+    target_price:
+      required: true
+      example: 3.5

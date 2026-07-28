@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs & coverage
+logs/
+*.log
+coverage/
+.turbo/
+
+# Runtime / local data
+tmp/
+data/
+*.sqlite
+
+# Python (HA integration tooling)
+__pycache__/
+*.py[cod]
+.venv/

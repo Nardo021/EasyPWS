@@ -1,0 +1,97 @@
+# EasyPWS — Docker Compose for a single Debian LXC / VM (Proxmox).
+# FRAME: Keep scraping, DB, and rule engine out of HAOS.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-easypws}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-easypws}
+      POSTGRES_DB: ${POSTGRES_DB:-easypws}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - easypws_pg:/var/lib/postgresql/data
+      - ./infrastructure/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-easypws}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - easypws_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      API_PORT: 3001
+      DATABASE_URL: postgres://${POSTGRES_USER:-easypws}:${POSTGRES_PASSWORD:-easypws}@postgres:5432/${POSTGRES_DB:-easypws}
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "${API_PORT:-3001}:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles: ["apps"]
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-easypws}:${POSTGRES_PASSWORD:-easypws}@postgres:5432/${POSTGRES_DB:-easypws}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles: ["apps"]
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: apps/scheduler/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-easypws}:${POSTGRES_PASSWORD:-easypws}@postgres:5432/${POSTGRES_DB:-easypws}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles: ["apps"]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3001}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
+    profiles: ["apps"]
+
+volumes:
+  easypws_pg:
+  easypws_redis:

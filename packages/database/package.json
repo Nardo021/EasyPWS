@@ -1,0 +1,26 @@
+{
+  "name": "@easypws/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"lint placeholder\"",
+    "migrate": "echo \"Apply SQL in infrastructure/migrations via your migrator (e.g. node-pg-migrate / drizzle). Scaffold only.\""
+  },
+  "dependencies": {
+    "@easypws/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "domain": "easypws",
+  "name": "EasyPWS",
+  "version": "0.1.0",
+  "documentation": "https://github.com/Nardo021/EasyPWS",
+  "issue_tracker": "https://github.com/Nardo021/EasyPWS/issues",
+  "codeowners": ["@Nardo021"],
+  "requirements": [],
+  "dependencies": [],
+  "config_flow": true,
+  "iot_class": "cloud_polling",
+  "integration_type": "hub"
+}
