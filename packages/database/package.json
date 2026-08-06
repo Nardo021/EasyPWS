@@ -1,0 +1,31 @@
+{
+  "name": "@easypws/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"lint placeholder\"",
+    "migrate": "echo \"Schema applied via docker-entrypoint-initdb.d or psql -f infrastructure/migrations/001_init.sql\""
+  },
+  "dependencies": {
+    "@easypws/contracts": "workspace:*",
+    "@easypws/core": "workspace:*",
+    "drizzle-orm": "^0.38.3",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "drizzle-kit": "^0.30.1",
+    "typescript": "^5.7.2"
+  }
+}
