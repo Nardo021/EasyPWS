@@ -11,8 +11,8 @@ ln -s /path/to/EasyPWS/integrations/home-assistant/custom_components/easypws \
 
 Restart HA, then add **EasyPWS** via UI:
 
-- Host: `http://<easypws-host>:3001`
-- Token: scoped `HA_API_TOKEN` from EasyPWS bootstrap logs
+- Host: `http://<easypws-host>:3000`
+- Token: scoped `HA_API_TOKEN` from EasyPWS bootstrap logs (`journalctl -u easypws`)
 
 ## Entities
 

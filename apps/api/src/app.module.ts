@@ -1,6 +1,15 @@
-import { Module, OnModuleInit } from "@nestjs/common";
-import { bootstrapSystem } from "@easypws/database";
+import { Module, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import {
+  bootstrapSystem,
+  closeDatabase,
+  ensureSchema,
+  resolveDatabasePath,
+} from "@easypws/database";
 import { createLogger } from "@easypws/observability";
+import {
+  startPriceCheckRuntime,
+  stopPriceCheckRuntime,
+} from "@easypws/services";
 import { HealthController } from "./health.controller.js";
 import { MetaController } from "./meta.controller.js";
 import { ProductsController } from "./products.controller.js";
@@ -25,16 +34,15 @@ const log = createLogger("easypws-api");
     MeController,
   ],
 })
-export class AppModule implements OnModuleInit {
+export class AppModule implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
-    if (!process.env["DATABASE_URL"]) {
-      log.warn("DATABASE_URL missing — API routes that need DB will fail");
-      return;
-    }
+    const dbPath = resolveDatabasePath();
+    ensureSchema(dbPath);
     const result = await bootstrapSystem(db(), {
       issueTokens: process.env["BOOTSTRAP_ISSUE_TOKENS"] === "true",
     });
     log.info("Bootstrap complete", {
+      databasePath: dbPath,
       userId: result.userId,
       watchlistId: result.watchlistId,
       issuedBootstrapToken: Boolean(result.bootstrapToken),
@@ -50,5 +58,12 @@ export class AppModule implements OnModuleInit {
         token: result.haToken,
       });
     }
+
+    startPriceCheckRuntime(db());
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    stopPriceCheckRuntime();
+    await closeDatabase();
   }
 }

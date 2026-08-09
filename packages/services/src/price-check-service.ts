@@ -97,7 +97,9 @@ export class PriceCheckService {
       .limit(1);
     const prev = previousObs[0];
 
-    const adapter = this.adapters.get(row.listing.retailer as import("@easypws/contracts").RetailerId);
+    const adapter = this.adapters.get(
+      row.listing.retailer as import("@easypws/contracts").RetailerId,
+    );
     let details;
     const started = Date.now();
     try {
@@ -177,9 +179,9 @@ export class PriceCheckService {
       await this.db.insert(priceObservations).values({
         id: createId("pobs"),
         listingId,
-        price: details.currentPrice.toFixed(2),
-        regularPrice: details.regularPrice?.toFixed(2),
-        unitPrice: details.unitPrice?.toFixed(4),
+        price: details.currentPrice,
+        regularPrice: details.regularPrice,
+        unitPrice: details.unitPrice,
         promotionType: details.promotionType,
         inStock: details.inStock,
         source: "adapter_api",
@@ -189,9 +191,9 @@ export class PriceCheckService {
     await this.db
       .update(retailerListings)
       .set({
-        currentPrice: details.currentPrice.toFixed(2),
-        regularPrice: details.regularPrice?.toFixed(2),
-        unitPrice: details.unitPrice?.toFixed(4),
+        currentPrice: details.currentPrice,
+        regularPrice: details.regularPrice,
+        unitPrice: details.unitPrice,
         unit: details.unit,
         inStock: details.inStock,
         promotionType: details.promotionType,
@@ -218,7 +220,10 @@ export class PriceCheckService {
       .from(watchlistItems)
       .innerJoin(watchlists, eq(watchlists.id, watchlistItems.watchlistId))
       .where(
-        and(eq(watchlistItems.listingId, listingId), eq(watchlistItems.status, "active")),
+        and(
+          eq(watchlistItems.listingId, listingId),
+          eq(watchlistItems.status, "active"),
+        ),
       );
 
     for (const { item, userId } of items) {
@@ -257,7 +262,11 @@ export class PriceCheckService {
         previousPromotionType: prev?.promotionType,
       });
 
-      const productLabel = [row.product.brand, row.product.name, row.product.size]
+      const productLabel = [
+        row.product.brand,
+        row.product.name,
+        row.product.size,
+      ]
         .filter(Boolean)
         .join(" ");
 
@@ -287,12 +296,14 @@ export class PriceCheckService {
             watchRuleId: match.ruleId,
             listingId,
             kind,
-            payload,
+            payload: payload as unknown as Record<string, unknown>,
             dedupeKey: match.dedupeKey,
             status: "pending",
           });
         } catch {
-          log.info("Suppressed duplicate notification", { dedupeKey: match.dedupeKey });
+          log.info("Suppressed duplicate notification", {
+            dedupeKey: match.dedupeKey,
+          });
           continue;
         }
 
@@ -313,7 +324,10 @@ export class PriceCheckService {
 
         for (const channel of channels) {
           try {
-            if (channel.type === "ha_webhook" || channel.type === "generic_webhook") {
+            if (
+              channel.type === "ha_webhook" ||
+              channel.type === "generic_webhook"
+            ) {
               await this.dispatcher.dispatch(
                 channel.type,
                 payload,
@@ -348,7 +362,10 @@ export class PriceCheckService {
     const rows = await this.db
       .select({ id: retailerListings.id })
       .from(retailerListings)
-      .innerJoin(watchlistItems, eq(watchlistItems.listingId, retailerListings.id))
+      .innerJoin(
+        watchlistItems,
+        eq(watchlistItems.listingId, retailerListings.id),
+      )
       .where(
         and(
           eq(watchlistItems.status, "active"),

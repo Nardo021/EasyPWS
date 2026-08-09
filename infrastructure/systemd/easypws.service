@@ -1,0 +1,21 @@
+[Unit]
+Description=EasyPWS single-process price watch service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/easypws
+EnvironmentFile=/opt/easypws/.env
+ExecStart=/usr/bin/node apps/api/dist/main.js
+Restart=always
+RestartSec=5
+# Native node:sqlite — no Redis/Postgres
+Environment=NODE_ENV=production
+
+# Harden a little
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

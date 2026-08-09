@@ -91,7 +91,9 @@ export default function HomePage() {
   return (
     <main>
       <h1 className="brand">EasyPWS</h1>
-      <p className="tagline">监控 Coles 价格、半价与历史最低 —— 独立于 Home Assistant。</p>
+      <p className="tagline">
+        监控 Coles 价格、半价与历史最低 —— 独立于 Home Assistant。
+      </p>
 
       <section className="row">
         <input
@@ -143,7 +145,7 @@ export default function HomePage() {
         <p className="meta">当前 Token：{maskToken(savedToken)}</p>
       ) : (
         <p className="meta">
-          首次部署：`docker compose logs api | grep BOOTSTRAP_TOKEN`
+          首次部署：`journalctl -u easypws -n 100 | grep BOOTSTRAP_TOKEN`
         </p>
       )}
       {info ? <p className="meta">{info}</p> : null}
@@ -184,7 +186,8 @@ export default function HomePage() {
                     {[r.brand, r.name, r.size].filter(Boolean).join(" ")}
                   </strong>
                   <div className="meta">
-                    {r.currentPrice !== undefined ? `$${r.currentPrice}` : "—"} ·{" "}
+                    {r.currentPrice !== undefined ? `$${r.currentPrice}` : "—"}{" "}
+                    ·{" "}
                     <a href={r.productUrl} target="_blank" rel="noreferrer">
                       商品页
                     </a>
@@ -202,7 +205,9 @@ export default function HomePage() {
                         refreshList();
                         setInfo(`已加入监控：${r.name}`);
                       } catch (err) {
-                        setError(err instanceof Error ? err.message : String(err));
+                        setError(
+                          err instanceof Error ? err.message : String(err),
+                        );
                       }
                     });
                   }}
@@ -258,7 +263,9 @@ export default function HomePage() {
       <section className="panel">
         <h2 className="section-title">Watchlist</h2>
         {items.length === 0 ? (
-          <p className="meta">还没有监控商品。先保存 Token，再粘贴 Coles URL。</p>
+          <p className="meta">
+            还没有监控商品。先保存 Token，再粘贴 Coles URL。
+          </p>
         ) : (
           items.map((item) => (
             <article key={item.watchlistItemId} className="item">
@@ -335,7 +342,9 @@ export default function HomePage() {
                           await easypwsApi.refresh(item.watchlistItemId);
                           setInfo("已排队刷新");
                         } catch (err) {
-                          setError(err instanceof Error ? err.message : String(err));
+                          setError(
+                            err instanceof Error ? err.message : String(err),
+                          );
                         }
                       })
                     }
@@ -349,7 +358,9 @@ export default function HomePage() {
                       startTransition(async () => {
                         await easypwsApi.setStatus(
                           item.watchlistItemId,
-                          item.monitoringStatus === "active" ? "paused" : "active",
+                          item.monitoringStatus === "active"
+                            ? "paused"
+                            : "active",
                         );
                         refreshList();
                       })

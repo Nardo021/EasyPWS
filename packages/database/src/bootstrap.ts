@@ -2,7 +2,13 @@ import { eq } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import { createId } from "@easypws/core";
 import type { Database } from "./client.js";
-import { apiTokens, notificationChannels, stores, users, watchlists } from "./schema.js";
+import {
+  apiTokens,
+  notificationChannels,
+  stores,
+  users,
+  watchlists,
+} from "./schema.js";
 
 export interface BootstrapResult {
   userId: string;
@@ -33,14 +39,21 @@ export async function bootstrapSystem(
     issueTokens?: boolean;
   } = {},
 ): Promise<BootstrapResult> {
-  const email = options.email ?? process.env["BOOTSTRAP_EMAIL"] ?? "admin@easypws.local";
+  const email =
+    options.email ?? process.env["BOOTSTRAP_EMAIL"] ?? "admin@easypws.local";
   const displayName = options.displayName ?? "EasyPWS Admin";
   const colesStoreExternal =
     options.colesStoreId ?? process.env["COLES_STORE_ID"] ?? "647";
   const colesStoreName =
-    options.colesStoreName ?? process.env["COLES_STORE_NAME"] ?? "Default Coles Store";
+    options.colesStoreName ??
+    process.env["COLES_STORE_NAME"] ??
+    "Default Coles Store";
 
-  const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  const existing = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
   let userId = existing[0]?.id;
   if (!userId) {
     userId = createId("user");
@@ -67,7 +80,11 @@ export async function bootstrapSystem(
   }
 
   const storeId = `store_coles_${colesStoreExternal}`;
-  const existingStore = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
+  const existingStore = await db
+    .select()
+    .from(stores)
+    .where(eq(stores.id, storeId))
+    .limit(1);
   if (!existingStore[0]) {
     await db.insert(stores).values({
       id: storeId,
@@ -86,7 +103,9 @@ export async function bootstrapSystem(
       .from(notificationChannels)
       .where(eq(notificationChannels.userId, userId))
       .limit(10);
-    const hasHa = channels.some((c) => c.type === "ha_webhook");
+    const hasHa = channels.some(
+      (c: { type: string }) => c.type === "ha_webhook",
+    );
     if (!hasHa) {
       await db.insert(notificationChannels).values({
         id: createId("nchan"),

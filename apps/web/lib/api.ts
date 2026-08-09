@@ -1,5 +1,4 @@
-const API_BASE =
-  process.env["NEXT_PUBLIC_API_URL"]?.replace(/\/$/, "") ?? "http://localhost:3001";
+const API_BASE = process.env["NEXT_PUBLIC_API_URL"]?.replace(/\/$/, "") ?? "";
 
 export function getStoredToken(): string {
   if (typeof window === "undefined") {
@@ -99,14 +98,17 @@ export const easypwsApi = {
       body: JSON.stringify({ url, targetPrice }),
     }),
   search: (q: string) =>
-    api<{ items: SearchResult[] }>(`/products/search?q=${encodeURIComponent(q)}`),
+    api<{ items: SearchResult[] }>(
+      `/products/search?q=${encodeURIComponent(q)}`,
+    ),
   setStatus: (id: string, status: "active" | "paused") =>
     api(`/watchlists/items/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
   remove: (id: string) => api(`/watchlists/items/${id}`, { method: "DELETE" }),
-  refresh: (id: string) => api(`/watchlists/items/${id}/refresh`, { method: "POST" }),
+  refresh: (id: string) =>
+    api(`/watchlists/items/${id}/refresh`, { method: "POST" }),
   setTarget: (id: string, targetPrice: number) =>
     api(`/watchlists/items/${id}/target-price`, {
       method: "PATCH",

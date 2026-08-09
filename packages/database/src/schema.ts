@@ -1,32 +1,35 @@
 import {
-  boolean,
   index,
   integer,
-  jsonb,
-  numeric,
-  pgTable,
+  real,
+  sqliteTable,
   text,
-  timestamp,
   uniqueIndex,
-} from "drizzle-orm/pg-core";
+} from "drizzle-orm/sqlite-core";
 
-export const users = pgTable("users", {
+const ts = (name: string) => integer(name, { mode: "timestamp_ms" });
+
+export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
   displayName: text("display_name"),
   oidcSubject: text("oidc_subject").unique(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: ts("created_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: ts("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
 });
 
-export const retailers = pgTable("retailers", {
+export const retailers = sqliteTable("retailers", {
   id: text("id").primaryKey(),
   displayName: text("display_name").notNull(),
   baseUrl: text("base_url").notNull(),
-  enabled: boolean("enabled").notNull().default(true),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
 });
 
-export const stores = pgTable(
+export const stores = sqliteTable(
   "stores",
   {
     id: text("id").primaryKey(),
@@ -38,10 +41,12 @@ export const stores = pgTable(
     region: text("region"),
     timezone: text("timezone"),
   },
-  (t) => [uniqueIndex("stores_retailer_external").on(t.retailerId, t.externalStoreId)],
+  (t) => [
+    uniqueIndex("stores_retailer_external").on(t.retailerId, t.externalStoreId),
+  ],
 );
 
-export const products = pgTable("products", {
+export const products = sqliteTable("products", {
   id: text("id").primaryKey(),
   barcode: text("barcode"),
   brand: text("brand"),
@@ -49,11 +54,15 @@ export const products = pgTable("products", {
   size: text("size"),
   category: text("category"),
   imageUrl: text("image_url"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: ts("created_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: ts("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
 });
 
-export const productIdentifiers = pgTable(
+export const productIdentifiers = sqliteTable(
   "product_identifiers",
   {
     id: text("id").primaryKey(),
@@ -66,7 +75,7 @@ export const productIdentifiers = pgTable(
   (t) => [uniqueIndex("product_identifiers_type_value").on(t.type, t.value)],
 );
 
-export const retailerListings = pgTable(
+export const retailerListings = sqliteTable(
   "retailer_listings",
   {
     id: text("id").primaryKey(),
@@ -79,17 +88,21 @@ export const retailerListings = pgTable(
     retailerProductId: text("retailer_product_id").notNull(),
     productUrl: text("product_url").notNull(),
     storeId: text("store_id").references(() => stores.id),
-    currentPrice: numeric("current_price", { precision: 12, scale: 2 }),
-    regularPrice: numeric("regular_price", { precision: 12, scale: 2 }),
-    unitPrice: numeric("unit_price", { precision: 12, scale: 4 }),
+    currentPrice: real("current_price"),
+    regularPrice: real("regular_price"),
+    unitPrice: real("unit_price"),
     unit: text("unit"),
-    inStock: boolean("in_stock").notNull().default(true),
+    inStock: integer("in_stock", { mode: "boolean" }).notNull().default(true),
     promotionType: text("promotion_type").notNull().default("none"),
-    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    lastCheckedAt: ts("last_checked_at"),
     checkTier: text("check_tier").notNull().default("normal"),
-    nextCheckAt: timestamp("next_check_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    nextCheckAt: ts("next_check_at"),
+    createdAt: ts("created_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: ts("updated_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
   },
   (t) => [
     uniqueIndex("listings_retailer_product_store").on(
@@ -101,36 +114,42 @@ export const retailerListings = pgTable(
   ],
 );
 
-export const priceObservations = pgTable(
+export const priceObservations = sqliteTable(
   "price_observations",
   {
     id: text("id").primaryKey(),
     listingId: text("listing_id")
       .notNull()
       .references(() => retailerListings.id, { onDelete: "cascade" }),
-    price: numeric("price", { precision: 12, scale: 2 }).notNull(),
-    regularPrice: numeric("regular_price", { precision: 12, scale: 2 }),
-    unitPrice: numeric("unit_price", { precision: 12, scale: 4 }),
+    price: real("price").notNull(),
+    regularPrice: real("regular_price"),
+    unitPrice: real("unit_price"),
     promotionType: text("promotion_type").notNull().default("none"),
-    inStock: boolean("in_stock").notNull().default(true),
-    observedAt: timestamp("observed_at", { withTimezone: true }).notNull().defaultNow(),
+    inStock: integer("in_stock", { mode: "boolean" }).notNull().default(true),
+    observedAt: ts("observed_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
     source: text("source").notNull(),
     rawHash: text("raw_hash"),
   },
   (t) => [index("idx_price_obs_listing_time").on(t.listingId, t.observedAt)],
 );
 
-export const watchlists = pgTable("watchlists", {
+export const watchlists = sqliteTable("watchlists", {
   id: text("id").primaryKey(),
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: ts("created_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: ts("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
 });
 
-export const watchlistItems = pgTable(
+export const watchlistItems = sqliteTable(
   "watchlist_items",
   {
     id: text("id").primaryKey(),
@@ -141,41 +160,54 @@ export const watchlistItems = pgTable(
       .notNull()
       .references(() => retailerListings.id),
     status: text("status").notNull().default("active"),
-    targetPrice: numeric("target_price", { precision: 12, scale: 2 }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    targetPrice: real("target_price"),
+    createdAt: ts("created_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: ts("updated_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
   },
   (t) => [uniqueIndex("watchlist_items_unique").on(t.watchlistId, t.listingId)],
 );
 
-export const watchRules = pgTable("watch_rules", {
+export const watchRules = sqliteTable("watch_rules", {
   id: text("id").primaryKey(),
   watchlistItemId: text("watchlist_item_id")
     .notNull()
     .references(() => watchlistItems.id, { onDelete: "cascade" }),
   type: text("type").notNull(),
   operator: text("operator").notNull(),
-  value: numeric("value", { precision: 12, scale: 4 }),
+  value: real("value"),
   cooldownHours: integer("cooldown_hours").notNull().default(24),
-  enabled: boolean("enabled").notNull().default(true),
-  lastTriggeredAt: timestamp("last_triggered_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  lastTriggeredAt: ts("last_triggered_at"),
+  createdAt: ts("created_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: ts("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
 });
 
-export const notificationChannels = pgTable("notification_channels", {
+export const notificationChannels = sqliteTable("notification_channels", {
   id: text("id").primaryKey(),
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   type: text("type").notNull(),
   name: text("name").notNull(),
-  config: jsonb("config").notNull().default({}),
-  enabled: boolean("enabled").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  config: text("config", { mode: "json" })
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default({}),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: ts("created_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
 });
 
-export const notificationEvents = pgTable(
+export const notificationEvents = sqliteTable(
   "notification_events",
   {
     id: text("id").primaryKey(),
@@ -188,17 +220,21 @@ export const notificationEvents = pgTable(
       .notNull()
       .references(() => retailerListings.id),
     kind: text("kind").notNull(),
-    payload: jsonb("payload").notNull(),
+    payload: text("payload", { mode: "json" })
+      .$type<Record<string, unknown>>()
+      .notNull(),
     dedupeKey: text("dedupe_key").notNull(),
     status: text("status").notNull().default("pending"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    createdAt: ts("created_at")
+      .notNull()
+      .$defaultFn(() => new Date()),
+    deliveredAt: ts("delivered_at"),
     error: text("error"),
   },
   (t) => [uniqueIndex("idx_notification_dedupe").on(t.dedupeKey)],
 );
 
-export const collectionJobs = pgTable("collection_jobs", {
+export const collectionJobs = sqliteTable("collection_jobs", {
   id: text("id").primaryKey(),
   type: text("type").notNull(),
   listingId: text("listing_id").references(() => retailerListings.id, {
@@ -208,34 +244,47 @@ export const collectionJobs = pgTable("collection_jobs", {
   priority: integer("priority").notNull().default(100),
   attempts: integer("attempts").notNull().default(0),
   maxAttempts: integer("max_attempts").notNull().default(5),
-  runAfter: timestamp("run_after", { withTimezone: true }).notNull().defaultNow(),
-  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  runAfter: ts("run_after")
+    .notNull()
+    .$defaultFn(() => new Date()),
+  lockedAt: ts("locked_at"),
   lastError: text("last_error"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: ts("created_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: ts("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
 });
 
-export const adapterHealth = pgTable("adapter_health", {
+export const adapterHealth = sqliteTable("adapter_health", {
   retailer: text("retailer")
     .primaryKey()
     .references(() => retailers.id),
   status: text("status").notNull(),
   latencyMs: integer("latency_ms"),
   message: text("message"),
-  checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+  checkedAt: ts("checked_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
 });
 
-export const apiTokens = pgTable("api_tokens", {
+export const apiTokens = sqliteTable("api_tokens", {
   id: text("id").primaryKey(),
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  scopes: text("scopes").array().notNull().default([]),
+  scopes: text("scopes", { mode: "json" })
+    .$type<string[]>()
+    .notNull()
+    .default([]),
   tokenPrefix: text("token_prefix").notNull(),
   tokenHash: text("token_hash").notNull().unique(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
-  expiresAt: timestamp("expires_at", { withTimezone: true }),
-  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: ts("created_at")
+    .notNull()
+    .$defaultFn(() => new Date()),
+  lastUsedAt: ts("last_used_at"),
+  expiresAt: ts("expires_at"),
+  revokedAt: ts("revoked_at"),
 });

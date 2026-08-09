@@ -1,22 +1,11 @@
-# Database migrations
+# Schema migrations
 
-SQL migrations are the source of truth for EasyPWS schema.
+SQLite DDL lives in [`001_init.sql`](./001_init.sql).
 
-| File | Description |
-|------|-------------|
-| `001_init.sql` | Core tables: users, products, listings, append-only `price_observations`, watchlists, rules, jobs, notifications, adapter health |
+Applied automatically on process start via `ensureSchema()` in `@easypws/database` when the `users` table is missing.
 
-## Apply (scaffold)
-
-Until a migrator is chosen (Drizzle / Prisma / node-pg-migrate):
+Manual apply (optional):
 
 ```bash
-docker compose up -d postgres
-psql "$DATABASE_URL" -f infrastructure/migrations/001_init.sql
+sqlite3 "$DATABASE_PATH" < infrastructure/migrations/001_init.sql
 ```
-
-## Design notes
-
-- **Never overwrite** rows in `price_observations` — charts, historical low, and anomaly detection depend on append-only history.
-- Canonical `products` are distinct from `retailer_listings` so one product can map to Coles + Woolworths listings.
-- `check_tier` / `next_check_at` on listings support adaptive scheduling (promo vs stale vs backoff).

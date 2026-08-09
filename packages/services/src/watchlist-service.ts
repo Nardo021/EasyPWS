@@ -26,7 +26,10 @@ export class WatchlistService {
     }
     const id = createId("wlist");
     await this.db.insert(watchlists).values({ id, userId, name: "Default" });
-    const created = await this.db.select().from(watchlists).where(eq(watchlists.id, id));
+    const created = await this.db
+      .select()
+      .from(watchlists)
+      .where(eq(watchlists.id, id));
     return created[0]!;
   }
 
@@ -40,9 +43,17 @@ export class WatchlistService {
       })
       .from(watchlistItems)
       .innerJoin(watchlists, eq(watchlists.id, watchlistItems.watchlistId))
-      .innerJoin(retailerListings, eq(retailerListings.id, watchlistItems.listingId))
+      .innerJoin(
+        retailerListings,
+        eq(retailerListings.id, watchlistItems.listingId),
+      )
       .innerJoin(products, eq(products.id, retailerListings.productId))
-      .where(and(eq(watchlists.userId, userId), eq(watchlistItems.watchlistId, list.id)));
+      .where(
+        and(
+          eq(watchlists.userId, userId),
+          eq(watchlistItems.watchlistId, list.id),
+        ),
+      );
 
     const result = [];
     for (const row of items) {
@@ -74,7 +85,10 @@ export class WatchlistService {
         productUrl: row.listing.productUrl,
         currentPrice,
         regularPrice,
-        discountPercentage: discountPercentage(regularPrice, currentPrice ?? Number.NaN),
+        discountPercentage: discountPercentage(
+          regularPrice,
+          currentPrice ?? Number.NaN,
+        ),
         historicalLow,
         inStock: row.listing.inStock,
         promotionType: row.listing.promotionType,
@@ -126,7 +140,7 @@ export class WatchlistService {
         .update(watchlistItems)
         .set({
           status: "active",
-          targetPrice: params.targetPrice?.toFixed(2),
+          targetPrice: params.targetPrice,
           updatedAt: new Date(),
         })
         .where(eq(watchlistItems.id, existing[0].id));
@@ -142,7 +156,7 @@ export class WatchlistService {
       watchlistId: list.id,
       listingId: params.listingId,
       status: "active",
-      targetPrice: params.targetPrice?.toFixed(2),
+      targetPrice: params.targetPrice,
     });
 
     await this.db.insert(watchRules).values([
@@ -179,7 +193,11 @@ export class WatchlistService {
     return id;
   }
 
-  async setStatus(userId: string, watchlistItemId: string, status: "active" | "paused") {
+  async setStatus(
+    userId: string,
+    watchlistItemId: string,
+    status: "active" | "paused",
+  ) {
     await this.assertOwnedItem(userId, watchlistItemId);
     await this.db
       .update(watchlistItems)
@@ -195,11 +213,15 @@ export class WatchlistService {
       .where(eq(watchlistItems.id, watchlistItemId));
   }
 
-  async setTargetPrice(userId: string, watchlistItemId: string, targetPrice: number) {
+  async setTargetPrice(
+    userId: string,
+    watchlistItemId: string,
+    targetPrice: number,
+  ) {
     await this.assertOwnedItem(userId, watchlistItemId);
     await this.db
       .update(watchlistItems)
-      .set({ targetPrice: targetPrice.toFixed(2), updatedAt: new Date() })
+      .set({ targetPrice, updatedAt: new Date() })
       .where(eq(watchlistItems.id, watchlistItemId));
     await this.ensureTargetRule(watchlistItemId, targetPrice);
   }
@@ -220,7 +242,7 @@ export class WatchlistService {
       watchlistItemId: params.watchlistItemId,
       type: params.type,
       operator: params.operator,
-      value: params.value?.toFixed(4),
+      value: params.value,
       cooldownHours: params.cooldownHours ?? 24,
       enabled: params.enabled ?? true,
     });
@@ -259,7 +281,7 @@ export class WatchlistService {
       await this.db
         .update(watchRules)
         .set({
-          value: targetPrice.toFixed(4),
+          value: targetPrice,
           operator: "LESS_THAN_OR_EQUAL",
           enabled: true,
           updatedAt: new Date(),
@@ -272,7 +294,7 @@ export class WatchlistService {
       watchlistItemId,
       type: "TARGET_PRICE",
       operator: "LESS_THAN_OR_EQUAL",
-      value: targetPrice.toFixed(4),
+      value: targetPrice,
       cooldownHours: 24,
       enabled: true,
     });
@@ -283,7 +305,12 @@ export class WatchlistService {
       .select({ id: watchlistItems.id })
       .from(watchlistItems)
       .innerJoin(watchlists, eq(watchlists.id, watchlistItems.watchlistId))
-      .where(and(eq(watchlistItems.id, watchlistItemId), eq(watchlists.userId, userId)))
+      .where(
+        and(
+          eq(watchlistItems.id, watchlistItemId),
+          eq(watchlists.userId, userId),
+        ),
+      )
       .limit(1);
     if (!rows[0]) {
       throw new Error("Watchlist item not found");

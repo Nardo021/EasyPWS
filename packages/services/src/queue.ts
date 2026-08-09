@@ -1,42 +1,123 @@
-import { Queue } from "bullmq";
-import { Redis } from "ioredis";
-
 export const PRICE_CHECK_QUEUE = "price_check";
 
-let queue: Queue | null = null;
-let connection: Redis | null = null;
+export type PriceCheckHandler = (listingId: string) => Promise<void>;
 
-function getConnection(): Redis {
-  if (!connection) {
-    const url = process.env["REDIS_URL"] ?? "redis://localhost:6379";
-    connection = new Redis(url, { maxRetriesPerRequest: null });
-  }
-  return connection;
+interface QueueJob {
+  id: string;
+  listingId: string;
+  priority: number;
+  attempts: number;
+  maxAttempts: number;
+  runAt: number;
 }
 
-export function getPriceCheckQueue(): Queue {
-  if (!queue) {
-    queue = new Queue(PRICE_CHECK_QUEUE, { connection: getConnection() });
+const jobs: QueueJob[] = [];
+const delayedTimers = new Set<ReturnType<typeof setTimeout>>();
+
+let handler: PriceCheckHandler | null = null;
+let pumping = false;
+let stopped = true;
+let seq = 0;
+
+function sortJobs(): void {
+  jobs.sort((a, b) => {
+    if (a.priority !== b.priority) {
+      return a.priority - b.priority;
+    }
+    return a.runAt - b.runAt;
+  });
+}
+
+async function pump(): Promise<void> {
+  if (pumping || stopped || !handler) {
+    return;
   }
-  return queue;
+  pumping = true;
+  try {
+    while (!stopped && handler) {
+      const now = Date.now();
+      const idx = jobs.findIndex((j) => j.runAt <= now);
+      if (idx < 0) {
+        break;
+      }
+      const [job] = jobs.splice(idx, 1);
+      if (!job) {
+        break;
+      }
+      try {
+        await handler(job.listingId);
+      } catch {
+        job.attempts += 1;
+        if (job.attempts < job.maxAttempts) {
+          const backoffMs = 30_000 * 2 ** (job.attempts - 1);
+          job.runAt = Date.now() + backoffMs;
+          jobs.push(job);
+          sortJobs();
+          schedulePump(backoffMs);
+        }
+      }
+    }
+  } finally {
+    pumping = false;
+  }
+}
+
+function schedulePump(delayMs = 0): void {
+  if (stopped) {
+    return;
+  }
+  const timer = setTimeout(() => {
+    delayedTimers.delete(timer);
+    void pump();
+  }, delayMs);
+  delayedTimers.add(timer);
+}
+
+/** @deprecated no-op retained for call-site compatibility during migration */
+export function getPriceCheckQueue(): { name: string } {
+  return { name: PRICE_CHECK_QUEUE };
 }
 
 export async function enqueuePriceCheck(
   listingId: string,
   opts: { priority?: number; delayMs?: number } = {},
 ): Promise<string> {
-  const job = await getPriceCheckQueue().add(
-    "check",
-    { listingId },
-    {
-      jobId: `price_${listingId}_${Date.now()}`,
-      priority: opts.priority ?? 100,
-      delay: opts.delayMs,
-      removeOnComplete: 1000,
-      removeOnFail: 5000,
-      attempts: 5,
-      backoff: { type: "exponential", delay: 30_000 },
-    },
-  );
-  return job.id ?? listingId;
+  seq += 1;
+  const id = `price_${listingId}_${Date.now()}_${seq}`;
+  const delayMs = opts.delayMs ?? 0;
+  const job: QueueJob = {
+    id,
+    listingId,
+    priority: opts.priority ?? 100,
+    attempts: 0,
+    maxAttempts: 5,
+    runAt: Date.now() + delayMs,
+  };
+  jobs.push(job);
+  sortJobs();
+  schedulePump(delayMs);
+  return id;
+}
+
+export function startPriceCheckWorker(next: PriceCheckHandler): void {
+  handler = next;
+  stopped = false;
+  schedulePump(0);
+}
+
+export function stopPriceCheckWorker(): void {
+  stopped = true;
+  handler = null;
+  for (const timer of delayedTimers) {
+    clearTimeout(timer);
+  }
+  delayedTimers.clear();
+  jobs.length = 0;
+}
+
+/** Test helper */
+export function _resetQueueForTests(): void {
+  stopPriceCheckWorker();
+  seq = 0;
+  pumping = false;
 }

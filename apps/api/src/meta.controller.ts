@@ -21,16 +21,23 @@ export class MetaController {
   architecture() {
     return {
       stack: {
-        web: "Next.js + TypeScript",
+        web: "Next.js static export (same process)",
         api: "NestJS",
-        worker: "BullMQ",
-        scheduler: "BullMQ + due-listing poller",
-        database: "PostgreSQL + Drizzle",
-        cacheQueue: "Redis",
+        worker: "In-process queue (concurrency 1)",
+        scheduler: "In-process due-listing poller",
+        database: "SQLite + Drizzle",
+        cacheQueue: "In-process (no Redis)",
       },
-      deployment: "Docker Compose on Debian LXC (Proxmox)",
+      deployment: "Single Node process on Debian LXC (Proxmox) via systemd",
       ha: "Native custom integration under integrations/home-assistant",
-      firstRelease: ["coles", "url-import", "watchlist", "rules", "charts", "ha"],
+      firstRelease: [
+        "coles",
+        "url-import",
+        "watchlist",
+        "rules",
+        "charts",
+        "ha",
+      ],
     };
   }
 }
