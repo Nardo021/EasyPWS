@@ -587,4 +587,15 @@ Store-price rules are unchanged. An echoed store id and a current timestamp stay
 | `pnpm typecheck` | 0 | 10 packages |
 | `pnpm lint` | 0 | ESLint completed |
 
+### CI for `08e62d3f99b36711a2607abc46deb25ed5f3293b`
+
+Both runs passed on Ubuntu and Windows, including the job that previously failed.
+
+| Event | Result | URL |
+| --- | --- | --- |
+| push | success | https://github.com/Nardo021/EasyPWS/actions/runs/43019146555 |
+| pull_request | success | https://github.com/Nardo021/EasyPWS/actions/runs/43019158574 |
+
+Each run has `install-build-test` and `fresh-typecheck-test` on `ubuntu-latest` and `windows-latest`.
+
 `PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.
