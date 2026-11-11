@@ -599,3 +599,9 @@ Both runs passed on Ubuntu and Windows, including the job that previously failed
 Each run has `install-build-test` and `fresh-typecheck-test` on `ubuntu-latest` and `windows-latest`.
 
 `PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.
+
+## Phase 1A
+
+Offline provider foundation continues on `easypws-v2/phase-01a-provider-foundation`, branched from this SHA. Draft PR #3 is not the Phase 1A pull request and is not merged. This Phase 0 verdict is unchanged. See [phase-01a-provider-foundation.md](./phase-01a-provider-foundation.md).
+
+`PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.

@@ -24,6 +24,22 @@ export type {
   StorePriceVerdict,
   StoreQuoteComparison,
 } from "./evidence/contract.js";
+export { createFixtureProvider, type FixtureProvider, type FixtureScript } from "./provider/fixture.js";
+export {
+  normalizeProductQuote,
+  type NormalizationResult,
+  type NormalizedProviderQuote,
+} from "./provider/normalize.js";
+export {
+  ManualClock,
+  ProviderRouter,
+  systemRouterClock,
+  type CollectionRouteResult,
+  type ProductRouteResult,
+  type RouterClock,
+  type RouterConfig,
+  type StoreRouteResult,
+} from "./provider/router.js";
 export { ColesAdapter } from "./coles/adapter.js";
 export { WoolworthsAdapter } from "./woolworths/adapter.js";
 export { GenericScraperAdapter } from "./generic/adapter.js";
