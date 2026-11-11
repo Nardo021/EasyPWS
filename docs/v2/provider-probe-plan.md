@@ -94,5 +94,5 @@ Corrective C applies that gate as follows. These readings do not relax it.
 - A store-directory hit for `4166` verifies the store identity. It does not verify a later price.
 - `store_parameter_forwarded` means the client source sends the store upstream. `store_price_independently_verified` requires a store-selected source outside the provider. An echoed `store_id` never supplies that.
 - Equal prices at two stores are inconclusive. A stock difference verifies quantity only.
-- `freshly_fetched` means the record has a source timestamp. Listing and bulk cards without one are `historical_cached` on that axis.
+- Retrieval time, source timestamp, freshness, and cache provenance are separate. A missing timestamp is `unknown`, not proof of a cache. A current timestamp is not automatically `fresh`. An old timestamp can be `stale`. See Corrective D.
 - Walking specials pages cannot be required for PASS. The measured total of 7289 is larger than the 104-page cap.

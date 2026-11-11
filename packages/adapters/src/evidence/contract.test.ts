@@ -40,13 +40,19 @@ describe("classifyQuote", () => {
         priceDescription: "1/2 Price",
         savePercent: 50,
         sourceTimestamp: "2026-11-11T11:41:07Z",
+        assessedAt: "2026-11-11T11:42:07Z",
+        retrievedAt: "2026-11-11T11:42:08Z",
         upstreamStoreParameterSent: true,
       }),
     );
     expect(result.schema).toBe("schema_valid");
     expect(result.promotion).toBe("promotion_confirmed");
     expect(result.promotionKind).toBe("half_price");
-    expect(result.freshness).toBe("freshly_fetched");
+    expect(result.retrieval).toBe("known");
+    expect(result.sourceTimestampState).toBe("present");
+    expect(result.sourceAge).toBe("current");
+    expect(result.freshness).toBe("unknown");
+    expect(result.cacheProvenance).toBe("unknown");
     expect(result.storeParameter).toBe("store_parameter_forwarded");
     expect(result.storePrice).toBe("store_price_unverified");
     expect(result.availability).toBe("available");
@@ -80,7 +86,9 @@ describe("classifyQuote", () => {
     );
     expect(result.promotionKind).toBe("multibuy");
     expect(result.promotion).toBe("promotion_confirmed");
-    expect(result.freshness).toBe("historical_cached");
+    expect(result.sourceTimestampState).toBe("missing");
+    expect(result.freshness).toBe("unknown");
+    expect(result.cacheProvenance).toBe("unknown");
   });
 
   it("leaves a special without a former price ambiguous", () => {
@@ -133,6 +141,78 @@ describe("classifyQuote", () => {
     const result = classifyQuote(quote({ isAvailable: false, isOnSpecial: true, price: 3.3 }));
     expect(result.availability).toBe("unavailable");
     expect(result.promotion).toBe("promotion_ambiguous");
+  });
+});
+
+describe("quote time and cache", () => {
+  it("does not treat a missing source timestamp as a historical cache", () => {
+    const result = classifyQuote(quote({ retrievedAt: "2026-11-11T11:42:08Z" }));
+    expect(result.retrieval).toBe("known");
+    expect(result.sourceTimestampState).toBe("missing");
+    expect(result.sourceAge).toBe("unknown");
+    expect(result.freshness).toBe("unknown");
+    expect(result.cacheProvenance).toBe("unknown");
+  });
+
+  it("keeps an invalid source timestamp unknown", () => {
+    const result = classifyQuote(
+      quote({
+        sourceTimestamp: "2026-13-40T00:00:00Z",
+        assessedAt: "2026-11-11T11:42:07Z",
+        retrievedAt: "not-a-timestamp",
+      }),
+    );
+    expect(result.retrieval).toBe("unknown");
+    expect(result.sourceTimestampState).toBe("invalid");
+    expect(result.freshness).toBe("unknown");
+    expect(result.cacheProvenance).toBe("unknown");
+  });
+
+  it("marks an old source timestamp stale without calling it cached", () => {
+    const result = classifyQuote(
+      quote({
+        sourceTimestamp: "2026-11-10T11:41:07Z",
+        assessedAt: "2026-11-11T11:42:07Z",
+      }),
+    );
+    expect(result.sourceTimestampState).toBe("present");
+    expect(result.sourceAge).toBe("old");
+    expect(result.freshness).toBe("stale");
+    expect(result.cacheProvenance).toBe("unknown");
+  });
+
+  it("does not promote a current source timestamp to fresh", () => {
+    const result = classifyQuote(
+      quote({
+        sourceTimestamp: "2026-11-11T11:41:07Z",
+        assessedAt: "2026-11-11T11:42:07Z",
+        cacheProvenance: "not_cached",
+      }),
+    );
+    expect(result.sourceAge).toBe("current");
+    expect(result.freshness).toBe("unknown");
+    expect(result.cacheProvenance).toBe("not_cached");
+    expect(result.storePrice).toBe("store_price_unverified");
+  });
+
+  it("accepts freshness only from an explicit confirmation of a current timestamp", () => {
+    const confirmed = classifyQuote(
+      quote({
+        sourceTimestamp: "2026-11-11T11:41:07Z",
+        assessedAt: "2026-11-11T11:42:07Z",
+        freshnessConfirmed: true,
+      }),
+    );
+    const missing = classifyQuote(quote({ freshnessConfirmed: true }));
+    expect(confirmed.freshness).toBe("fresh");
+    expect(confirmed.storePrice).toBe("store_price_unverified");
+    expect(missing.freshness).toBe("unknown");
+  });
+
+  it("records an explicit cache flag independently of the timestamp", () => {
+    const result = classifyQuote(quote({ cacheProvenance: "cached" }));
+    expect(result.cacheProvenance).toBe("cached");
+    expect(result.freshness).toBe("unknown");
   });
 });
 

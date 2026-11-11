@@ -8,6 +8,7 @@ export {
 } from "./evidence/contract.js";
 export type {
   AvailabilityVerdict,
+  CacheProvenance,
   CatalogueEnumeration,
   FreshnessVerdict,
   ListingPageAssessment,
@@ -15,7 +16,10 @@ export type {
   PromotionKind,
   QuoteClassification,
   QuoteEvidenceInput,
+  RetrievalState,
   SchemaVerdict,
+  SourceAge,
+  SourceTimestampState,
   StoreParameterVerdict,
   StorePriceVerdict,
   StoreQuoteComparison,

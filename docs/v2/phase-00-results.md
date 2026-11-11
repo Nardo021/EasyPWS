@@ -1,6 +1,6 @@
 # EasyPWS V2 — Phase 0 results
 
-**Verdict: PARTIAL.** Phase 0 is not PASS. Corrective B collected 20 real SKUs for Coles Marrickville (`4166`, NSW). Corrective C, with no new provider requests, shows why that quote is still not store-proven and why the specials catalogue cannot be fully enumerated. See Corrective C.
+**Verdict: PARTIAL.** Phase 0 is not PASS. Corrective C shows the Omkar price is not store-proven. Corrective D fixes the Windows queue flake and stops treating a timestamp as a cache or freshness proof. See Corrective D.
 
 **Date:** 2026-11-11, Australia/Sydney  
 **Repository:** `Nardo021/EasyPWS`  
@@ -526,13 +526,13 @@ Complete catalogue enumeration is **not possible** for this specials result. It 
 | Regular | Search rows with no promotion and no former price. Three of the five sample regulars are sponsored. | `promotion_confirmed` / `regular` |
 | Unavailable | `1501351` and `4873250` are unavailable and also on special. | availability `unavailable`; promotion still ambiguous |
 
-The specials facet counts, which are catalogue counts rather than page rows, are all 7289, multi_buy 1921, half_price 1484, online_only 227. Those three subsets do not add up to 7289. Page 1 of `special_type=all` therefore does not represent half price or online-only. `is_online_only_special` is false on every saved row. Currency is AUD on every saved row. Listing and bulk cards have no `last_updated`. Bulk also has `available_quantity` null on all 20 while `is_available` is true. That is `historical_cached` for freshness and `available` for stock state, with quantity absent. Bulk prices and promotion fields still match the 20 saved quotes.
+The specials facet counts, which are catalogue counts rather than page rows, are all 7289, multi_buy 1921, half_price 1484, online_only 227. Those three subsets do not add up to 7289. Page 1 of `special_type=all` therefore does not represent half price or online-only. `is_online_only_special` is false on every saved row. Currency is AUD on every saved row. Listing and bulk cards have no `last_updated`. Bulk also has `available_quantity` null on all 20 while `is_available` is true. Corrective C called that `historical_cached`. Corrective D replaces that label: a missing timestamp is `unknown`, not proof of a cache. Stock state remains `available`, with quantity absent. Bulk prices and promotion fields still match the 20 saved quotes.
 
 ### Store scope
 
 **Fact:** `details` sends GraphQL `storeId=COL:{store}` and BFF `storeId`. `bulk` sends `brandedStoreId=COL:{store}`. Listings send `storeId`. `product_card` and `product_details` assign `store_id` from that argument. Omitting `store` uses `COLES_DEFAULT_STORE_ID`.
 
-**Measured:** the `4166` and `846` details bodies differ only in `store_id` and `available_quantity` (257 versus 399). Price, former price, promotion, and `last_updated` (`2026-11-11T11:41:07Z`) match. The shared timestamp is not a per-store observation. Equal prices are inconclusive. The stock difference shows the store parameter changed quantity. It does not independently verify the price. Classification: `schema_valid`, `store_parameter_forwarded`, `store_price_unverified`, `freshly_fetched`, `promotion_confirmed`.
+**Measured:** the `4166` and `846` details bodies differ only in `store_id` and `available_quantity` (257 versus 399). Price, former price, promotion, and `last_updated` (`2026-11-11T11:41:07Z`) match. The shared timestamp is not a per-store observation. Equal prices are inconclusive. The stock difference shows the store parameter changed quantity. It does not independently verify the price. Classification at the time: `schema_valid`, `store_parameter_forwarded`, `store_price_unverified`, `freshly_fetched`, `promotion_confirmed`. Corrective D keeps the store-price result and no longer treats the shared timestamp as freshness.
 
 ### Tests
 
@@ -547,5 +547,44 @@ The specials facet counts, which are catalogue counts rather than page rows, are
 ### Further requests
 
 Not justified for this gate. A half-price specials call would sample a facet that page 1 missed, and it would not make `store_id` independent. Page 2 would not change the cap arithmetic. Do not call Coles HTML to bypass the earlier Incapsula response.
+
+`PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.
+
+## Corrective D — CI flake and freshness
+
+**Date:** 2026-11-11, Australia/Sydney
+**Starting HEAD:** `7423d67e660d54ec3c16d2c6dbeb6e3970193a82`
+**External requests:** 0
+**Labels:** `PROVIDER_GATE_PARTIAL`, `PHASE_0_PARTIAL`. Phase 0 is not PASS.
+
+### Windows failure
+
+PR run https://github.com/Nardo021/EasyPWS/actions/runs/43016557758 on `7423d67` failed only in `fresh-typecheck-test (windows-latest)`. The test step threw `Error: delayed job missing`. The other three jobs passed, including `install-build-test (windows-latest)` on the same SHA. That split means the sleep in `smoke-queue.mts` is unstable under load.
+
+The queue also had a real gap. `pump` stopped when it woke before `runAt` and did not arm the next deadline, so an early timer could leave the delayed job stranded. `armSoonest` now schedules that deadline. The smoke script uses a manual clock. It checks priority order, a future job that must not block a ready job, an early wake that must re-arm, stop, retry backoff, and giving up after five attempts. It does not sleep.
+
+### Freshness
+
+Retrieval time, the provider source timestamp, the freshness verdict, and cache provenance are separate fields.
+
+| Input | Result |
+| --- | --- |
+| Missing source timestamp | `sourceTimestampState=missing`, `freshness=unknown`, `cacheProvenance=unknown` unless an explicit cache flag is passed |
+| Invalid source timestamp | `invalid`, freshness `unknown` |
+| Source older than 24 hours against `assessedAt` | `stale`. This is not a cache flag |
+| Source inside 24 hours, and not more than 5 minutes ahead | `sourceAge=current`, freshness `unknown` |
+| That current timestamp plus `freshnessConfirmed` | `fresh` |
+| `retrievedAt` | `retrieval=known` or `unknown` only. It does not change freshness |
+
+Store-price rules are unchanged. An echoed store id and a current timestamp stay `store_price_unverified` unless `independentStorePrice` is set.
+
+### Local commands
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `pnpm test` | 0 | adapters 22 passed, rules 4 passed, database smoke ok, queue smoke ok |
+| `pnpm build` | 0 | 8 libraries, Next export, API `tsc` |
+| `pnpm typecheck` | 0 | 10 packages |
+| `pnpm lint` | 0 | ESLint completed |
 
 `PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.

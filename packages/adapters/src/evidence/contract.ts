@@ -9,7 +9,16 @@ export type StoreParameterVerdict = "store_parameter_forwarded" | "store_paramet
 export type StorePriceVerdict =
   | "store_price_independently_verified"
   | "store_price_unverified";
-export type FreshnessVerdict = "freshly_fetched" | "historical_cached";
+export type RetrievalState = "known" | "unknown";
+export type SourceTimestampState = "missing" | "invalid" | "present";
+export type SourceAge = "current" | "old" | "unknown";
+export type FreshnessVerdict = "fresh" | "stale" | "unknown";
+export type CacheProvenance = "cached" | "not_cached" | "unknown";
+
+/** A source timestamp inside this age is current, not automatically fresh. */
+export const SOURCE_CURRENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** A source timestamp this far ahead of the assessment clock is not trusted. */
+export const SOURCE_FUTURE_SKEW_MS = 5 * 60 * 1000;
 export type PromotionConfidence = "promotion_confirmed" | "promotion_ambiguous";
 export type PromotionKind =
   | "regular"
@@ -42,8 +51,22 @@ export interface QuoteEvidenceInput {
   savePercent?: number | null;
   multiBuy?: MultiBuyEvidence | null;
   isAvailable?: boolean | null;
+  /** When this client received the HTTP response. Not a freshness proof. */
+  retrievedAt?: string | null;
   /** Provider source timestamp. Absent on listing cards and bulk cards. */
   sourceTimestamp?: string | null;
+  /** Clock used to judge source age. Tests pass this explicitly. */
+  assessedAt?: string | null;
+  /**
+   * Set only from an explicit cache signal such as a cache header.
+   * A missing or present source timestamp does not set this.
+   */
+  cacheProvenance?: CacheProvenance | null;
+  /**
+   * Set only when something other than the timestamp establishes freshness.
+   * A current source timestamp does not set this.
+   */
+  freshnessConfirmed?: boolean;
   /**
    * Set only from provider source that shows the store argument is sent upstream.
    * Do not set this because the response store id matches the request.
@@ -60,7 +83,11 @@ export interface QuoteClassification {
   schemaProblems: string[];
   storeParameter: StoreParameterVerdict;
   storePrice: StorePriceVerdict;
+  retrieval: RetrievalState;
+  sourceTimestampState: SourceTimestampState;
+  sourceAge: SourceAge;
   freshness: FreshnessVerdict;
+  cacheProvenance: CacheProvenance;
   promotion: PromotionConfidence;
   promotionKind: PromotionKind;
   availability: AvailabilityVerdict;
@@ -109,6 +136,73 @@ export const OMKAR_LISTING_MAX_PAGES = 104;
 
 function hasText(value: string | null | undefined): value is string {
   return typeof value === "string" && value.trim() !== "";
+}
+
+function parseUtcTimestamp(value: string | null | undefined): number | null {
+  if (!hasText(value)) {
+    return null;
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/.exec(value);
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const fraction = match[7] ?? "";
+  const millisecond = fraction.length === 0 ? 0 : Number(fraction.padEnd(3, "0"));
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) {
+    return null;
+  }
+  const epochMs = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
+  const parsed = new Date(epochMs);
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return epochMs;
+}
+
+function sourceTimestampState(value: string | null | undefined): SourceTimestampState {
+  if (!hasText(value)) {
+    return "missing";
+  }
+  return parseUtcTimestamp(value) === null ? "invalid" : "present";
+}
+
+function sourceAge(sourceMs: number | null, assessedMs: number | null): SourceAge {
+  if (sourceMs === null || assessedMs === null) {
+    return "unknown";
+  }
+  const ageMs = assessedMs - sourceMs;
+  if (ageMs < -SOURCE_FUTURE_SKEW_MS) {
+    return "unknown";
+  }
+  if (ageMs > SOURCE_CURRENT_WINDOW_MS) {
+    return "old";
+  }
+  return "current";
+}
+
+function freshnessFor(age: SourceAge, confirmed: boolean): FreshnessVerdict {
+  switch (age) {
+    case "old":
+      return "stale";
+    case "current":
+      return confirmed ? "fresh" : "unknown";
+    case "unknown":
+      return "unknown";
+    default: {
+      const unexpected: never = age;
+      return unexpected;
+    }
+  }
 }
 
 function describesHalfPrice(description: string | null | undefined): boolean {
@@ -166,9 +260,11 @@ export function classifyQuote(input: QuoteEvidenceInput): QuoteClassification {
     input.independentStorePrice === true && schema === "schema_valid"
       ? "store_price_independently_verified"
       : "store_price_unverified";
-  const freshness: FreshnessVerdict = hasText(input.sourceTimestamp)
-    ? "freshly_fetched"
-    : "historical_cached";
+  const retrieval: RetrievalState = parseUtcTimestamp(input.retrievedAt) === null ? "unknown" : "known";
+  const timestampState = sourceTimestampState(input.sourceTimestamp);
+  const age = sourceAge(parseUtcTimestamp(input.sourceTimestamp), parseUtcTimestamp(input.assessedAt));
+  const freshness = freshnessFor(age, input.freshnessConfirmed === true);
+  const cacheProvenance: CacheProvenance = input.cacheProvenance ?? "unknown";
 
   let availability: AvailabilityVerdict = "unknown";
   if (input.isAvailable === true) {
@@ -183,7 +279,11 @@ export function classifyQuote(input: QuoteEvidenceInput): QuoteClassification {
     schemaProblems,
     storeParameter,
     storePrice,
+    retrieval,
+    sourceTimestampState: timestampState,
+    sourceAge: age,
     freshness,
+    cacheProvenance,
     promotion: promotionFields.promotion,
     promotionKind: promotionFields.promotionKind,
     availability,
