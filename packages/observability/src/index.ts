@@ -14,7 +14,6 @@ export function createLogger(service: string) {
       message,
       ...fields,
     };
-    // eslint-disable-next-line no-console
     console[level === "debug" ? "log" : level](JSON.stringify(entry));
   }
 

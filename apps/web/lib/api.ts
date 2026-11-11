@@ -47,7 +47,7 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       if (err instanceof Error && err.message !== text) {
         throw err;
       }
-      throw new Error(text || `HTTP ${response.status}`);
+      throw new Error(text || `HTTP ${response.status}`, { cause: err });
     }
   }
   return response.json() as Promise<T>;

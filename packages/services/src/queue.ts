@@ -2,6 +2,16 @@ export const PRICE_CHECK_QUEUE = "price_check";
 
 export type PriceCheckHandler = (listingId: string) => Promise<void>;
 
+export interface QueueTimer {
+  cancel(): void;
+}
+
+/** Clock and timer used by the queue. Tests replace this so delays do not sleep. */
+export interface QueueClock {
+  now(): number;
+  setTimer(delayMs: number, callback: () => void): QueueTimer;
+}
+
 interface QueueJob {
   id: string;
   listingId: string;
@@ -11,13 +21,23 @@ interface QueueJob {
   runAt: number;
 }
 
-const jobs: QueueJob[] = [];
-const delayedTimers = new Set<ReturnType<typeof setTimeout>>();
+const systemClock: QueueClock = {
+  now: () => Date.now(),
+  setTimer(delayMs, callback) {
+    const timer = setTimeout(callback, delayMs);
+    return { cancel: () => clearTimeout(timer) };
+  },
+};
 
+const jobs: QueueJob[] = [];
+const timers = new Set<QueueTimer>();
+
+let clock: QueueClock = systemClock;
 let handler: PriceCheckHandler | null = null;
 let pumping = false;
 let stopped = true;
 let seq = 0;
+let activePumps = 0;
 
 function sortJobs(): void {
   jobs.sort((a, b) => {
@@ -28,19 +48,56 @@ function sortJobs(): void {
   });
 }
 
+function schedulePump(delayMs = 0): void {
+  if (stopped) {
+    return;
+  }
+  const timer = clock.setTimer(Math.max(0, delayMs), () => {
+    timers.delete(timer);
+    void pump();
+  });
+  timers.add(timer);
+}
+
+/**
+ * A timer can fire before `runAt` because wall clocks and timer wheels differ.
+ * Leaving the loop there used to drop the job. Arm the soonest future deadline.
+ */
+function armSoonest(): void {
+  if (stopped) {
+    return;
+  }
+  const now = clock.now();
+  let soonest = Number.POSITIVE_INFINITY;
+  for (const job of jobs) {
+    if (job.runAt < soonest) {
+      soonest = job.runAt;
+    }
+  }
+  if (!Number.isFinite(soonest)) {
+    return;
+  }
+  const wait = soonest - now;
+  if (wait <= 0) {
+    return;
+  }
+  schedulePump(wait);
+}
+
 async function pump(): Promise<void> {
   if (pumping || stopped || !handler) {
     return;
   }
   pumping = true;
+  activePumps += 1;
   try {
     while (!stopped && handler) {
-      const now = Date.now();
-      const idx = jobs.findIndex((j) => j.runAt <= now);
-      if (idx < 0) {
+      const now = clock.now();
+      const index = jobs.findIndex((job) => job.runAt <= now);
+      if (index < 0) {
         break;
       }
-      const [job] = jobs.splice(idx, 1);
+      const [job] = jobs.splice(index, 1);
       if (!job) {
         break;
       }
@@ -50,7 +107,7 @@ async function pump(): Promise<void> {
         job.attempts += 1;
         if (job.attempts < job.maxAttempts) {
           const backoffMs = 30_000 * 2 ** (job.attempts - 1);
-          job.runAt = Date.now() + backoffMs;
+          job.runAt = clock.now() + backoffMs;
           jobs.push(job);
           sortJobs();
           schedulePump(backoffMs);
@@ -59,18 +116,9 @@ async function pump(): Promise<void> {
     }
   } finally {
     pumping = false;
+    activePumps -= 1;
+    armSoonest();
   }
-}
-
-function schedulePump(delayMs = 0): void {
-  if (stopped) {
-    return;
-  }
-  const timer = setTimeout(() => {
-    delayedTimers.delete(timer);
-    void pump();
-  }, delayMs);
-  delayedTimers.add(timer);
 }
 
 /** @deprecated no-op retained for call-site compatibility during migration */
@@ -83,7 +131,7 @@ export async function enqueuePriceCheck(
   opts: { priority?: number; delayMs?: number } = {},
 ): Promise<string> {
   seq += 1;
-  const id = `price_${listingId}_${Date.now()}_${seq}`;
+  const id = `price_${listingId}_${clock.now()}_${seq}`;
   const delayMs = opts.delayMs ?? 0;
   const job: QueueJob = {
     id,
@@ -91,7 +139,7 @@ export async function enqueuePriceCheck(
     priority: opts.priority ?? 100,
     attempts: 0,
     maxAttempts: 5,
-    runAt: Date.now() + delayMs,
+    runAt: clock.now() + delayMs,
   };
   jobs.push(job);
   sortJobs();
@@ -108,10 +156,10 @@ export function startPriceCheckWorker(next: PriceCheckHandler): void {
 export function stopPriceCheckWorker(): void {
   stopped = true;
   handler = null;
-  for (const timer of delayedTimers) {
-    clearTimeout(timer);
+  for (const timer of timers) {
+    timer.cancel();
   }
-  delayedTimers.clear();
+  timers.clear();
   jobs.length = 0;
 }
 
@@ -120,4 +168,18 @@ export function _resetQueueForTests(): void {
   stopPriceCheckWorker();
   seq = 0;
   pumping = false;
+  activePumps = 0;
+  clock = systemClock;
+}
+
+/** Test helper. Call after `_resetQueueForTests`. */
+export function _setQueueClockForTests(next: QueueClock): void {
+  clock = next;
+}
+
+/** Test helper. Resolves when an in-flight pump has finished and armed its next timer. */
+export async function _settleQueueForTests(): Promise<void> {
+  while (activePumps > 0) {
+    await Promise.resolve();
+  }
 }
