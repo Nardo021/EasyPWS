@@ -2,8 +2,8 @@
 
 **Audit date:** 2026-11-11 (Australia/Sydney)  
 **Baseline:** `main` at [`e476f9f5a639abe2a3401573ba883c58be124425`](https://github.com/Nardo021/EasyPWS/commit/e476f9f5a639abe2a3401573ba883c58be124425)  
-**Status:** PARTIAL — STATIC_SOURCE_REVIEW_COMPLETE; BASELINE_TESTS_NOT_RUN; LIVE_PROVIDER_TESTS_NOT_RUN; CLOUDFLARE_BUILD_NOT_RUN.  
-**Scope:** No functional code changes, no remote migrations, no production deployment. This document records inspected source and a proposed implementation path, **not** an acceptance of Phase 0.
+**Status:** PARTIAL — see [phase-00-results.md](./phase-00-results.md). Baseline commands were run on 2026-11-11. Official Windows `typecheck` / `test` / `build` fail because the package filter is skipped by `cmd.exe`. A local Worker + D1 proof ran. Provider calls were bounded; 20 SKUs and a verified NSW store are still unmet. Phase 0 is not PASS.  
+**Scope:** No production code migration, no remote resources, no production deployment. The local proof lives in `infrastructure/cloudflare/phase0-poc/` and must not be deployed.
 
 ## Locked user requirements
 
@@ -68,13 +68,13 @@ https://easypws.yanze.me
 
 - [x] Read source baseline / file-level portability review.
 - [x] Record target deployment and data provenance requirements.
-- [ ] Run `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` with log/exit-code evidence.
-- [ ] Verify local static export and a minimal Cloudflare Worker + D1 prototype (without live deployment or modifying main).
-- [ ] Execute provider probes with selected store, bounded request budget, real HTTP result codes and 20 sample SKUs; compare normalized output and prices.
-- [ ] Check exact free quotas / request-cost for Omkar hosted, API.SH and Apify. Don't guess.
-- [ ] Draft D1 migration plan with idempotence, data portability, rollback strategy and old-data backup.
-- [ ] Define authorization, date/store freshness semantics, retry and failure handling tests.
-- [ ] Present evidence matrix, blockers and release gates. Phase 0 becomes PASS only after local+provider evidence is reviewed.
+- [x] Run `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build` with log/exit-code evidence. Lint is a placeholder. Official typecheck, test, and build failed on Windows; details are in the results file.
+- [x] Verify local static export and a minimal Cloudflare Worker + D1 prototype (without live deployment or modifying main).
+- [ ] Execute provider probes with a verified NSW store, bounded request budget, and 20 real SKUs. One BFF product was measured. Store id and the other 19 SKUs remain unmet.
+- [x] Record published free quotas for Omkar Hosted, API.SH, and Apify from their pages. Account meters were not visible.
+- [x] Draft D1 migration plan with backup, rollback, and provenance. Not executed against production data.
+- [x] Define authorization, freshness, and retry behavior. Not implemented.
+- [x] Present the evidence matrix and blockers. Phase 0 stays PARTIAL until the unmet SKU and store gates pass.
 
 ## Reference documentation
 

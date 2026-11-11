@@ -1,7 +1,7 @@
 # EasyPWS V2 — Phase 0 provider probe protocol
 
 **Date:** 2026-11-11  
-**Execution status:** NOT EXECUTED — contract review only.  
+**Execution status:** PARTIAL — bounded calls on 2026-11-11. Evidence and the unmet 20-SKU gate are in [phase-00-results.md](./phase-00-results.md).  
 **Safety:** Read-only, rate-limited requests; no stored credentials in repo, screenshots or logs. Stop on access denial, bot challenges or disallowed use. Never work around anti-bot protection, rotate identities to defeat controls, or infer authorization from public visibility.
 
 ## Hypothesis
@@ -76,11 +76,11 @@ Log only approved evidence and sanitized response excerpts; retain full raw payl
 
 | Provider | Store verified | Search | Details | Specials | Bulk | Price parity | Quota verified | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Omkar Hosted | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | PENDING |
-| API.SH | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | PENDING |
-| Apify Actor (not yet selected) | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | PENDING |
-| Existing BFF | UNTESTED | UNTESTED | UNTESTED | NOT IMPLEMENTED | N/A | UNTESTED | UNTESTED | PENDING |
-| Omkar local Python | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | UNTESTED | HOST COST UNKNOWN | PENDING |
+| Omkar Hosted | NO | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | Published Basic plan only; no key; unauthenticated 401 | BLOCKED |
+| API.SH | NO | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | Published 1,000 credits/month; no key; unauthenticated 401 | BLOCKED |
+| Apify Actor (not selected) | NO | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | Published actor prices; no token; no run | BLOCKED |
+| Existing BFF | NO | 404 | 200 for one SKU; empty 200 for a missing id | NOT IMPLEMENTED | N/A | Same price at requested 4166 and 584; store not echoed | No vendor quota; HTML challenge not bypassed | PARTIAL |
+| Omkar local Python | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | NOT RUN | MIT and `curl_cffi` read from source; process not started | BLOCKED |
 
 ## Acceptance gate
 
