@@ -7,7 +7,7 @@
 **Branch:** `easypws-v2/phase-00-audit`  
 **Baseline SHA:** `e476f9f5a639abe2a3401573ba883c58be124425`  
 **Branch tip before this report:** `6bf9a8ae7525bf7843a0f0dec4ada74d0bfbcd84`  
-**Environment:** Windows, Node `v24.13.0`, pnpm `9.15.0` (matches `packageManager`), Python `3.13.15` present but not used to run a scraper. No GitHub Actions workflows exist in the repository. No production deploy, no remote D1 database, no merge.
+**Environment:** Windows, Node `v24.13.0`, pnpm `9.15.0` (matches `packageManager`), Python `3.13.15` present but not used to run a scraper. Corrective A adds `.github/workflows/ci.yml`. No production deploy, no remote D1 database, no merge.
 
 Labels used below:
 
@@ -20,7 +20,7 @@ Labels used below:
 | Gate | Result |
 | --- | --- |
 | Source portability review | Met earlier on this branch; rechecked against the same baseline. |
-| `pnpm install`, `lint`, `typecheck`, `test`, `build` with exit codes | Commands were run. Official `typecheck`, `test`, and `build` fail on this Windows tree. A follow-up package build makes typecheck, tests, and the API build pass. Lint is a placeholder. |
+| `pnpm install`, `lint`, `typecheck`, `test`, `build` with exit codes | Original Windows run failed. Corrective A passed these commands on a clean worktree, including typecheck and test before any `dist` existed. See Corrective A. Lint is ESLint, not an echo. |
 | Local static export and a local Worker + D1 prototype | Met. Next.js exported 21 files. Wrangler `4.160.0` ran the prototype locally only. |
 | One verified NSW store and 20 real SKUs | Not met. HTML store pages were an Incapsula challenge. One real product id was returned. The payload does not echo a store id. |
 | At least one fresh, store-proven provider quote | Not met. Coles BFF product details returned one priced product. Store scoping was not proven. |
@@ -298,8 +298,6 @@ No anti-bot bypass, proxy, or captcha handling is part of this design.
 
 ## Remaining blockers
 
-- Official Windows `pnpm build` skips library packages, so a clean `typecheck` / `test` / API build fails until that filter is fixed.
-- Lint is not implemented.
 - No verified NSW store id.
 - Twenty real SKUs were not collected.
 - Omkar Hosted, API.SH, and Apify were not called with credentials.
@@ -307,7 +305,101 @@ No anti-bot bypass, proxy, or captcha handling is part of this design.
 - BFF search is a 404. BFF details do not echo the store. `lastUpdated` is not trusted freshness.
 - Free-plan CPU was not measured.
 - No production data file was backed up because none was in this workspace, and the LXC host was not contacted.
+- Remote GitHub Actions for Corrective A is recorded in that section. It is not a provider-gate item.
 
 ## Next action
 
-Fix the Windows build filter and rerun the official four commands on a clean tree. Then land the quote contract against the one captured product. Do not deploy, and do not spend provider quota until a free Omkar key and a store-proven NSW id are both available.
+Do not start Phase 1. The provider gate is still blocked: a verified NSW store, 20 real SKUs, and a credentialed provider quote are unmet. Do not deploy, and do not spend provider quota until a free Omkar key and a store-proven NSW id are both available. Read Corrective A before treating the old Windows build failure as current.
+
+## Corrective A — Windows build, test, and CI
+
+**Date:** 2026-11-11, Australia/Sydney  
+**Starting SHA:** `fa5ce9438460bf7658e0b6f0b7b03b21adfd174e`  
+**Ending SHA:** filled in after this section is committed.  
+**Verdict labels:** `BUILD_GATE_PASS`, `CI_GATE_NOT_VERIFIED`, `PROVIDER_GATE_BLOCKED`, `PHASE_0_PARTIAL`. Phase 0 is not PASS.
+
+### Original defect and root cause
+
+**Measured.** The root `build` script was `pnpm -r --filter './packages/**' run build && ...`. On Windows, pnpm runs package scripts with `cmd.exe`. `cmd.exe` does not treat single quotes as quotes, so pnpm received a pattern that included the quote characters, matched no projects, and exited 0. The `&&` chain still built `@easypws/web` and then `@easypws/api`. The API `tsc` failed because library `dist` output had never been produced. A filter that matches nothing was not a failure.
+
+**Measured.** Every library `exports` map pointed `types` and `import` at `./dist`. A fresh `tsc --noEmit` and Vitest/tsx resolved workspace packages to those files. Without a previous build, typecheck and test failed even after the filter was corrected.
+
+**Fact.** All ten workspace `lint` scripts were `echo "lint placeholder"`. `pnpm lint` could exit 0 without reading a source file. The repository had no ESLint config and no GitHub Actions workflow.
+
+### What changed
+
+`scripts/workspace.mjs` is the root `build`, `typecheck`, `test`, and `lint` entry. It spawns pnpm with the filter `./packages/*` as one argument. On Windows that goes through `cmd.exe` without quoting the `*` (quoting it made pnpm treat the quotes as part of the pattern and match nothing). On other platforms the same argument is passed with no shell, so bash does not glob it. `--fail-if-no-match` is set, and the build also requires the list output to contain all eight library names: `@easypws/adapters`, `@easypws/contracts`, `@easypws/core`, `@easypws/database`, `@easypws/notifications`, `@easypws/observability`, `@easypws/rules`, `@easypws/services`. Libraries build in pnpm's dependency order, then `@easypws/web`, then `@easypws/api`.
+
+Typecheck and test do not read `dist`. Each library export adds condition `easypws-source` → `./src/index.ts`. Package typecheck configs set `customConditions` to that name. Adapter and rules Vitest configs use the same condition and include only `src/**/*.test.ts`, so compiled tests under `dist` are not run a second time. Database and services smoke tests use `node --conditions=easypws-source`. Production `import` / `default` still point at `dist` for the API runtime.
+
+Lint is ESLint `10.14.0` with `typescript-eslint` `8.72.2` and `@eslint/js` `10.0.1`, flat config, recommended rules, TypeScript sources only. Three source edits were required for that ruleset and nothing else: the web page dropped an `eslint-disable` for `react-hooks/exhaustive-deps` because that plugin is not installed; one `throw new Error` in `apps/web/lib/api.ts` now passes `{ cause: err }`; the observability logger dropped an unused `no-console` disable. `next-env.d.ts` keeps its triple-slash references, and that rule is off for `*.d.ts`. The database `migrate` script is still an echo. It is not the lint command.
+
+`.github/workflows/ci.yml` runs on push and pull request for `ubuntu-latest` and `windows-latest`. It uses pnpm `9.15.0` and Node `22` (the `engines` range is `>=22.5`). One job installs, builds, typechecks, tests, and lints. A second job installs, then typechecks, tests, and lints without building, so a `dist` dependency fails CI. There is no deploy.
+
+### Commands executed
+
+Clean checkout: detached worktree `D:\Dev\projects\EasyPWS-gate` at the starting SHA, with this change applied and no `node_modules` or `dist`. The existing checkout's `node_modules` and `dist` were left in place. Commands were started through `cmd.exe`. Node `v24.13.0`, pnpm `9.15.0`.
+
+| Order | Command | Exit | Result |
+| --- | --- | --- | --- |
+| 1 | `pnpm install --frozen-lockfile` | 0 | Fresh install. A later repeat printed `Lockfile is up to date` and `Already up to date` and also exited 0. |
+| 2 | `pnpm typecheck` before any build | 0 | 10 of 11 workspace projects. Root is excluded so the runner does not call itself. |
+| 3 | `pnpm test` before any build | 0 | adapters 5 passed, rules 4 passed, `sqlite bootstrap smoke ok`, `in-process queue smoke ok`. |
+| 4 | dist directories outside `node_modules` | — | 0. Typecheck and test did not create `dist`. |
+| 5 | `pnpm lint` before any build | 0 | ESLint completed with no findings. |
+| 6 | `pnpm build` | 0 | Log line `Library filter selected 8 packages.` Order was contracts and observability, core, then adapters, database, notifications, and rules, then services, then web export, then API `tsc`. |
+| 7 | `pnpm typecheck` after build | 0 | Same 10 projects. |
+| 8 | `pnpm test` after build | 0 | Same counts as the pre-build run. `dist` tests were not executed again. |
+| 9 | `pnpm lint` after build | 0 | No findings. |
+
+`git check-ignore` matched `packages/contracts/dist`, `apps/api/dist`, and `apps/web/out` to `.gitignore`. `git ls-files` for `dist` and `out` was empty. Generated output was not staged.
+
+Separate from the worktree, `pnpm --fail-if-no-match --filter "./does-not-exist/*" list --depth -1` exited 1 with `No projects matched the filters`. A PowerShell `pnpm build` in the existing checkout, before the worktree run, also selected 8 packages and exited 0.
+
+Linux bash was not executed here. This machine has no WSL distribution. The non-Windows branch of the runner does not invoke a shell. Ubuntu execution is the CI job, and that job had not been observed when this section was written.
+
+Next.js printed `The Next.js plugin was not detected in your ESLint configuration` during `next build` and still exited 0. `eslint-config-next` was not added.
+
+### CI
+
+Workflow file: `.github/workflows/ci.yml`.  
+Remote run: not observed yet. `CI_GATE_NOT_VERIFIED`.
+
+### Changed files
+
+- `.github/workflows/ci.yml`
+- `eslint.config.mjs`
+- `package.json`
+- `pnpm-lock.yaml`
+- `scripts/workspace.mjs`
+- `apps/api/package.json`
+- `apps/api/tsconfig.typecheck.json`
+- `apps/web/app/page.tsx`
+- `apps/web/lib/api.ts`
+- `apps/web/next-env.typecheck.d.ts`
+- `apps/web/package.json`
+- `apps/web/tsconfig.typecheck.json`
+- `packages/adapters/package.json`
+- `packages/adapters/tsconfig.typecheck.json`
+- `packages/adapters/vitest.config.ts`
+- `packages/contracts/package.json`
+- `packages/contracts/tsconfig.typecheck.json`
+- `packages/core/package.json`
+- `packages/core/tsconfig.typecheck.json`
+- `packages/database/package.json`
+- `packages/database/tsconfig.typecheck.json`
+- `packages/notifications/package.json`
+- `packages/notifications/tsconfig.typecheck.json`
+- `packages/observability/package.json`
+- `packages/observability/src/index.ts`
+- `packages/observability/tsconfig.typecheck.json`
+- `packages/rules/package.json`
+- `packages/rules/tsconfig.typecheck.json`
+- `packages/rules/vitest.config.ts`
+- `packages/services/package.json`
+- `packages/services/tsconfig.typecheck.json`
+- `docs/v2/phase-00-results.md`
+
+### Remaining blockers
+
+Provider gate is unchanged and blocked. No NSW store was verified. 20 real SKUs were not collected. No provider credential was used. No Cloudflare resource was deployed. Phase 0 stays `PHASE_0_PARTIAL`. CI remote status is `CI_GATE_NOT_VERIFIED` until a GitHub Actions run is observed.

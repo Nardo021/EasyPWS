@@ -71,7 +71,6 @@ export default function HomePage() {
     if (savedToken) {
       refreshList();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedToken]);
 
   useEffect(() => {
