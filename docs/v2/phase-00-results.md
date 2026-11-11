@@ -315,7 +315,7 @@ Do not start Phase 1. The provider gate is still blocked: a verified NSW store, 
 
 **Date:** 2026-11-11, Australia/Sydney  
 **Starting SHA:** `fa5ce9438460bf7658e0b6f0b7b03b21adfd174e`  
-**Ending SHA:** filled in after this section is committed.  
+**Ending SHA:** `219489f7044dbdfcdf7e07d25c5e5789a2d4d479`  
 **Verdict labels:** `BUILD_GATE_PASS`, `CI_GATE_NOT_VERIFIED`, `PROVIDER_GATE_BLOCKED`, `PHASE_0_PARTIAL`. Phase 0 is not PASS.
 
 ### Original defect and root cause
@@ -363,7 +363,7 @@ Next.js printed `The Next.js plugin was not detected in your ESLint configuratio
 ### CI
 
 Workflow file: `.github/workflows/ci.yml`.  
-Remote run: not observed yet. `CI_GATE_NOT_VERIFIED`.
+Remote run: not observed yet. `CI_GATE_NOT_VERIFIED`. The workflow is in ending SHA `219489f7044dbdfcdf7e07d25c5e5789a2d4d479`.
 
 ### Changed files
 
