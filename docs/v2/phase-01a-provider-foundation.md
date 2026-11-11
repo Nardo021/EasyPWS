@@ -81,6 +81,13 @@ Node `v24.13.0`, pnpm `9.15.0`, Windows. No provider HTTP call was made.
 | 4 | `pnpm test` | 0 | adapters 42 passed, rules 4 passed, database smoke ok, queue smoke ok. |
 | 5 | `pnpm lint` | 0 | ESLint completed. |
 
-Remote CI for this commit is recorded in a later note once GitHub Actions finishes. Ubuntu and Windows both have to pass before `PHASE_1A_CI_PASS`.
+### CI for `6eb8078ff8a084fb81b2268f1decc5df382b203b`
 
-`PHASE_1A_LOCAL_PASS`. `PHASE_1A_CI_NOT_VERIFIED`. `PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.
+Both runs passed on Ubuntu and Windows. Each run has `install-build-test` and `fresh-typecheck-test` on `ubuntu-latest` and `windows-latest`.
+
+| Event | Result | URL |
+| --- | --- | --- |
+| push | success | https://github.com/Nardo021/EasyPWS/actions/runs/43027391436 |
+| pull_request | success | https://github.com/Nardo021/EasyPWS/actions/runs/43027417477 |
+
+`PHASE_1A_LOCAL_PASS`. `PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.
