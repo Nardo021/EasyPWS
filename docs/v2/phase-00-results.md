@@ -305,7 +305,7 @@ No anti-bot bypass, proxy, or captcha handling is part of this design.
 - BFF search is a 404. BFF details do not echo the store. `lastUpdated` is not trusted freshness.
 - Free-plan CPU was not measured.
 - No production data file was backed up because none was in this workspace, and the LXC host was not contacted.
-- Remote GitHub Actions for Corrective A is recorded in that section. It is not a provider-gate item.
+- GitHub Actions for Corrective A passed on Ubuntu and Windows. That does not clear the provider gate.
 
 ## Next action
 
@@ -316,7 +316,7 @@ Do not start Phase 1. The provider gate is still blocked: a verified NSW store, 
 **Date:** 2026-11-11, Australia/Sydney  
 **Starting SHA:** `fa5ce9438460bf7658e0b6f0b7b03b21adfd174e`  
 **Ending SHA:** `219489f7044dbdfcdf7e07d25c5e5789a2d4d479`  
-**Verdict labels:** `BUILD_GATE_PASS`, `CI_GATE_NOT_VERIFIED`, `PROVIDER_GATE_BLOCKED`, `PHASE_0_PARTIAL`. Phase 0 is not PASS.
+**Verdict labels:** `BUILD_GATE_PASS`, `CI_GATE_PASS`, `PROVIDER_GATE_BLOCKED`, `PHASE_0_PARTIAL`. Phase 0 is not PASS.
 
 ### Original defect and root cause
 
@@ -356,14 +356,21 @@ Clean checkout: detached worktree `D:\Dev\projects\EasyPWS-gate` at the starting
 
 Separate from the worktree, `pnpm --fail-if-no-match --filter "./does-not-exist/*" list --depth -1` exited 1 with `No projects matched the filters`. A PowerShell `pnpm build` in the existing checkout, before the worktree run, also selected 8 packages and exited 0.
 
-Linux bash was not executed here. This machine has no WSL distribution. The non-Windows branch of the runner does not invoke a shell. Ubuntu execution is the CI job, and that job had not been observed when this section was written.
+Linux bash was not executed on this machine. No WSL distribution is installed. Ubuntu execution is the GitHub-hosted job below, which passed. The non-Windows runner passes `./packages/*` as one argv element and does not invoke a shell.
 
 Next.js printed `The Next.js plugin was not detected in your ESLint configuration` during `next build` and still exited 0. `eslint-config-next` was not added.
 
 ### CI
 
 Workflow file: `.github/workflows/ci.yml`.  
-Remote run: not observed yet. `CI_GATE_NOT_VERIFIED`. The workflow is in ending SHA `219489f7044dbdfcdf7e07d25c5e5789a2d4d479`.
+`CI_GATE_PASS` on SHA `fd1a3a07824d7efbdab2e6974d5f875b2f77ef17` (the commit that records ending SHA `219489f7044dbdfcdf7e07d25c5e5789a2d4d479`). Node on the runners was the current Node 22 line selected by `actions/setup-node`. pnpm was `9.15.0`.
+
+| Run | Event | Result |
+| --- | --- | --- |
+| https://github.com/Nardo021/EasyPWS/actions/runs/43008717536 | push | success. Ubuntu and Windows both completed `install-build-test` and `fresh-typecheck-test`. |
+| https://github.com/Nardo021/EasyPWS/actions/runs/43008718903 | pull_request | success. Same four jobs. |
+
+Each `install-build-test` job ran `pnpm install --frozen-lockfile`, `pnpm build`, `pnpm typecheck`, `pnpm test`, and `pnpm lint`. Each `fresh-typecheck-test` job ran install, typecheck, test, and lint without `pnpm build`. All eight jobs completed with conclusion `success`. Annotations were limited to the Node 20 deprecation notice for the action runtimes and an Ubuntu 26 image notice. They did not fail the jobs.
 
 ### Changed files
 
@@ -402,4 +409,4 @@ Remote run: not observed yet. `CI_GATE_NOT_VERIFIED`. The workflow is in ending 
 
 ### Remaining blockers
 
-Provider gate is unchanged and blocked. No NSW store was verified. 20 real SKUs were not collected. No provider credential was used. No Cloudflare resource was deployed. Phase 0 stays `PHASE_0_PARTIAL`. CI remote status is `CI_GATE_NOT_VERIFIED` until a GitHub Actions run is observed.
+Provider gate is unchanged and blocked. No NSW store was verified. 20 real SKUs were not collected. No provider credential was used. No Cloudflare resource was deployed. Phase 0 stays `PHASE_0_PARTIAL`. `BUILD_GATE_PASS`. `CI_GATE_PASS` on the runs linked above.
