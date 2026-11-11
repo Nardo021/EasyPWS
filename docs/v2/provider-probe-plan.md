@@ -1,7 +1,7 @@
 # EasyPWS V2 — Phase 0 provider probe protocol
 
 **Date:** 2026-11-11  
-**Execution status:** PARTIAL — bounded calls on 2026-11-11. Evidence and the unmet 20-SKU gate are in [phase-00-results.md](./phase-00-results.md).  
+**Execution status:** PARTIAL — Corrective B called Omkar with store `4166`. Sanitized evidence is in [phase-00-results.md](./phase-00-results.md). The price is not store-proven.  
 **Safety:** Read-only, rate-limited requests; no stored credentials in repo, screenshots or logs. Stop on access denial, bot challenges or disallowed use. Never work around anti-bot protection, rotate identities to defeat controls, or infer authorization from public visibility.
 
 ## Hypothesis
@@ -76,7 +76,7 @@ Log only approved evidence and sanitized response excerpts; retain full raw payl
 
 | Provider | Store verified | Search | Details | Specials | Bulk | Price parity | Quota verified | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Omkar Hosted | NO | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | Published Basic plan only; no key; unauthenticated 401 | BLOCKED |
+| Omkar Hosted | YES, Marrickville `4166`, NSW, from postcode `2204` | 200, `milk`, 55 rows, 296 matches | 200 for `8737163` at `4166` and `846` | 200, page 1, 58 rows, 7289 matches | 200, 20 ids, price fields matched the listing | Same price at `4166` and `846`; stock 257 vs 399. `store_id` is copied from the request | Header meter 1000, remaining 994 after Corrective B | PARTIAL |
 | API.SH | NO | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | Published 1,000 credits/month; no key; unauthenticated 401 | BLOCKED |
 | Apify Actor (not selected) | NO | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | NOT CALLED | Published actor prices; no token; no run | BLOCKED |
 | Existing BFF | NO | 404 | 200 for one SKU; empty 200 for a missing id | NOT IMPLEMENTED | N/A | Same price at requested 4166 and 584; store not echoed | No vendor quota; HTML challenge not bypassed | PARTIAL |

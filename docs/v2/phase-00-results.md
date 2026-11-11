@@ -1,6 +1,6 @@
 # EasyPWS V2 — Phase 0 results
 
-**Verdict: PARTIAL.** Phase 0 is not PASS. The acceptance gate still requires a verified NSW store, 20 real SKUs, and at least one provider quote whose store id is proven. Those items are unmet.
+**Verdict: PARTIAL.** Phase 0 is not PASS. Corrective B verified Coles Marrickville (`4166`, NSW) and collected 20 real SKUs from Omkar. The price quote is not store-proven: Omkar copies `store_id` from the request. See Corrective B.
 
 **Date:** 2026-11-11, Australia/Sydney  
 **Repository:** `Nardo021/EasyPWS`  
@@ -22,9 +22,9 @@ Labels used below:
 | Source portability review | Met earlier on this branch; rechecked against the same baseline. |
 | `pnpm install`, `lint`, `typecheck`, `test`, `build` with exit codes | Original Windows run failed. Corrective A passed these commands on a clean worktree, including typecheck and test before any `dist` existed. See Corrective A. Lint is ESLint, not an echo. |
 | Local static export and a local Worker + D1 prototype | Met. Next.js exported 21 files. Wrangler `4.160.0` ran the prototype locally only. |
-| One verified NSW store and 20 real SKUs | Not met. HTML store pages were an Incapsula challenge. One real product id was returned. The payload does not echo a store id. |
-| At least one fresh, store-proven provider quote | Not met. Coles BFF product details returned one priced product. Store scoping was not proven. |
-| Published quotas, without guessing account usage | Met for published pages. Account meters were not visible because no provider key was present. |
+| One verified NSW store and 20 real SKUs | Store met in the local postcode search, then 20 real SKUs in Corrective B. Official Coles HTML still did not confirm the store. |
+| At least one fresh, store-proven provider quote | Not met. Omkar returned a same-day price for `8737163`, and the two NSW stores differed in stock quantity. `store_id` is copied from the request, so the price is not store-proven. |
+| Published quotas, without guessing account usage | Met. Corrective B read the account request meter from response headers: limit 1000, remaining 994 after this pass. |
 | D1 migration, freshness, auth, and retry design | Met as a proposal in this file. Not implemented. |
 
 ## Task A — baseline commands
@@ -298,18 +298,18 @@ No anti-bot bypass, proxy, or captcha handling is part of this design.
 
 ## Remaining blockers
 
-- No verified NSW store id.
-- Twenty real SKUs were not collected.
-- Omkar Hosted, API.SH, and Apify were not called with credentials.
+- Omkar `store_id` is copied from the request. Identical prices at `4166` and `846` do not prove or disprove store-scoped pricing. Stock quantity did differ.
+- Official Coles HTML was not a readable store listing. No independent shelf price was captured.
+- Half-price listings were absent from specials page 1 and the milk search. Only the already known `8737163` was half price. No ordinary unavailable product was isolated.
+- API.SH and Apify were not called with credentials.
 - Omkar self-hosted was not executed, on purpose, because it depends on `curl_cffi`.
-- BFF search is a 404. BFF details do not echo the store. `lastUpdated` is not trusted freshness.
+- BFF search is a 404. BFF details do not echo the store.
 - Free-plan CPU was not measured.
 - No production data file was backed up because none was in this workspace, and the LXC host was not contacted.
-- GitHub Actions for Corrective A passed on Ubuntu and Windows. That does not clear the provider gate.
 
 ## Next action
 
-Do not start Phase 1. The provider gate is still blocked: a verified NSW store, 20 real SKUs, and a credentialed provider quote are unmet. Do not deploy, and do not spend provider quota until a free Omkar key and a store-proven NSW id are both available. Read Corrective A before treating the old Windows build failure as current.
+Do not start Phase 1. Do not deploy. `PROVIDER_GATE_PARTIAL` and `PHASE_0_PARTIAL`. A later pass may query `special_type=half_price` if the remaining free quota is still available. Do not treat an echoed `store_id` as a store-proven price.
 
 ## Corrective A — Windows build, test, and CI
 
@@ -410,3 +410,85 @@ Each `install-build-test` job ran `pnpm install --frozen-lockfile`, `pnpm build`
 ### Remaining blockers
 
 Provider gate is unchanged and blocked. No NSW store was verified. 20 real SKUs were not collected. No provider credential was used. No Cloudflare resource was deployed. Phase 0 stays `PHASE_0_PARTIAL`. `BUILD_GATE_PASS`. `CI_GATE_PASS` on the runs linked above.
+
+## Corrective B — Omkar product data
+
+**Date:** 2026-11-11, Australia/Sydney
+**Starting HEAD:** `c089942f9f3ff433fe2040ff4a556ca333640d36`
+**Selected store:** `4166`, Coles Marrickville, NSW. Store `584` was not used.
+**Labels:** `PROVIDER_GATE_PARTIAL`, `PHASE_0_PARTIAL`. Phase 0 is not PASS.
+
+### Requests
+
+This pass made 5 authenticated requests. There were no retries. The last response headers said limit `1000` and remaining `994`. The earlier postcode search is the extra request that takes the meter from 1000 to 994. Raw bodies stayed in gitignored `tmp/`.
+
+| # | Call | HTTP | Bytes | Remaining |
+| --- | --- | --- | --- | --- |
+| 1 | `/products/details?product=8737163&store=4166` | 200 | 6133 | 998 |
+| 2 | `/products/details?product=8737163&store=846` | 200 | 6132 | 997 |
+| 3 | `/specials?store=4166&page=1` | 200 | 95647 | 996 |
+| 4 | `/products/search?query=milk&store=4166&page=1` | 200 | 81157 | 995 |
+| 5 | `/products/bulk` for the 20 ids below, `store=4166` | 200 | 28247 | 994 |
+
+A filtered half-price or multibuy call was not needed for the multibuy sample and was not spent after specials page 1 showed no half-price rows.
+
+### Stage 1 — product `8737163`
+
+Both details calls returned JSON for the requested id. Name: V Energy Drink Original 4x250ml. Size: `1L`. Current price `6`, former price `12`, promotion `special`, special type `percent_off`, description `1/2 Price`. Available at both stores. `last_updated` was `2026-11-11T11:41:07Z` on both, which is the same Sydney evening as the call.
+
+| Field | Store `4166` | Store `846` |
+| --- | --- | --- |
+| Price / was | 6 / 12 | 6 / 12 |
+| Promotion | special, percent_off, 1/2 Price | same |
+| Available quantity | 257 | 399 |
+| `last_updated` | 2026-11-11T11:41:07Z | same |
+| `store_id` | 4166 | 846 |
+
+The open-source parser sets `store_id` from the function argument. The hosted field is therefore not independent proof. Upstream calls do receive the store: details sends GraphQL `storeId=COL:{store}` and BFF `storeId={store}`; bulk sends `brandedStoreId=COL:{store}`; listings send `storeId`. Omitting `store` falls back to `584`. This pass always sent the store.
+
+The identical price is not evidence that store scoping works or fails. The different stock quantity shows the store parameter changed at least that field. The same-day BFF details call that asked for `4166` had also returned quantity 257. That is the same upstream family, not an official Coles page. Official HTML remains unread because the earlier fetch was an Incapsula page and this pass did not bypass it.
+
+Classification for this quote: valid product, price, promotion, availability, and a same-day source timestamp. Store scope of the price is unverified.
+
+### Stage 2 — listings
+
+Specials page 1: `count` 7289, `per_page` 48, `current_page` 1, `total_pages` 104, `has_next` true, 58 unique product rows. The open-source client caps listing pages at 104, so 104 is not the full 7289-item page count. The returned row count is higher than `per_page`.
+
+Milk search page 1: `count` 296, `per_page` 48, `total_pages` 7, `has_next` true, 55 unique product rows. Again more rows than `per_page`. Page 2 was not fetched.
+
+Specials page 1 had 24 `multi_save` rows and 34 rows with no `special_type`. None had a half-price description or a current/former price ratio near one half. The milk search had no multibuy object and no half-price row. Listing cards did not include `last_updated`.
+
+### Stage 3 — 20 SKUs and bulk
+
+All 20 ids were unique and came from the responses. Bulk returned all 20, with `not_found_ids` empty. For every id, current price, former price, promotion type, special type, and multibuy minimum matched the listing or details quote. Bulk omitted `available_quantity` and `last_updated` on all 20, including `8737163`, whose details record had both. That is a schema difference, not a price or promotion mismatch.
+
+| ID | Kind | Product | Size | Price | Was | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 8150288 | regular | Coles Full Cream Milk | 3L | 4.95 | | search |
+| 5610177 | regular | Rokeby Fitmilk Lactose Free Light Milk | 1L | 3.2 | | search |
+| 1601593 | regular | Full+ Complete Nutrition Chocolate | 480mL | 5.95 | | search |
+| 1601618 | regular | Full+ Complete Nutrition Iced Coffee | 480mL | 5.95 | | search |
+| 439693 | regular | Coles Full Cream Milk | 2L | 3.4 | | search |
+| 8737163 | half_price | V Energy Drink Original 4x250ml | 1L | 6 | 12 | details; percent_off |
+| 9498523 | ordinary_special | U by Kotex Ultrathin Pads Super | 12 Pack | 3.9 | 5.6 | specials |
+| 7490178 | ordinary_special | Arkadia Vanilla Chai Tea | 240g | 5.95 | 7 | specials |
+| 4226763 | ordinary_special | Femfresh Daily Intimate Wash | 600mL | 10.05 | 14.4 | specials |
+| 9499005 | ordinary_special | U by Kotex Ultrathin Pads Regular | 14 Pack | 3.9 | 5.6 | specials |
+| 9628571 | multibuy | Skittles Fruits Party Share Bag | 200g | 6 | | min quantity 2 |
+| 1860660 | multibuy | Maltesers Milk Chocolate Gift Box | 360g | 15.5 | | min quantity 2 |
+| 3615657 | multibuy | Coles Kitchen Family Coleslaw Kit | 520g | 5.5 | | min quantity 2 |
+| 4628676 | special_without_was | Coles Tomatoes Greenhouse Truss | approx. 130g | 0.51 | | specials |
+| 3223329 | ordinary_special | U by Kotex Overnight Pads Long | 8 Pack | 3.9 | 5.6 | specials |
+| 3703754 | ordinary_special | Arkadia Chai Tea Low Sugar | 240g | 5.95 | 7 | specials |
+| 7490189 | ordinary_special | Arkadia Spice Chai Tea | 240g | 5.95 | 7 | specials |
+| 5285371 | ordinary_special | Tassal Salmon Portions Skin On | 300g | 17 | 22 | specials |
+| 5191256 | special_without_was | Coles Strawberries | 250g | 3.9 | | specials |
+| 4575605 | special_without_was | Coles Cucumbers Continental Loose | 1 Each | 2 | | specials |
+
+Two other rows were unavailable and also on special, so they were not counted as ordinary unavailable products: `1501351` Green Cayenne Chillies and `4873250` Full Cream Uht Milk.
+
+### Trust for Phase 1
+
+Not sufficient. The details quote is a real same-day price with a matching bulk price, but the store label is not independent and the two NSW stores returned the same price. Listing rows have no source timestamp. Do not mark these quotes live or store-verified.
+
+`PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.
