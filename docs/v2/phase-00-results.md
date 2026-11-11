@@ -1,6 +1,6 @@
 # EasyPWS V2 — Phase 0 results
 
-**Verdict: PARTIAL.** Phase 0 is not PASS. Corrective B verified Coles Marrickville (`4166`, NSW) and collected 20 real SKUs from Omkar. The price quote is not store-proven: Omkar copies `store_id` from the request. See Corrective B.
+**Verdict: PARTIAL.** Phase 0 is not PASS. Corrective B collected 20 real SKUs for Coles Marrickville (`4166`, NSW). Corrective C, with no new provider requests, shows why that quote is still not store-proven and why the specials catalogue cannot be fully enumerated. See Corrective C.
 
 **Date:** 2026-11-11, Australia/Sydney  
 **Repository:** `Nardo021/EasyPWS`  
@@ -23,7 +23,7 @@ Labels used below:
 | `pnpm install`, `lint`, `typecheck`, `test`, `build` with exit codes | Original Windows run failed. Corrective A passed these commands on a clean worktree, including typecheck and test before any `dist` existed. See Corrective A. Lint is ESLint, not an echo. |
 | Local static export and a local Worker + D1 prototype | Met. Next.js exported 21 files. Wrangler `4.160.0` ran the prototype locally only. |
 | One verified NSW store and 20 real SKUs | Store met in the local postcode search, then 20 real SKUs in Corrective B. Official Coles HTML still did not confirm the store. |
-| At least one fresh, store-proven provider quote | Not met. Omkar returned a same-day price for `8737163`, and the two NSW stores differed in stock quantity. `store_id` is copied from the request, so the price is not store-proven. |
+| At least one fresh, store-proven provider quote | Not met. Corrective C classifies the `8737163` details record as schema-valid and timestamped, with the store parameter forwarded in source. The price stays `store_price_unverified`. |
 | Published quotas, without guessing account usage | Met. Corrective B read the account request meter from response headers: limit 1000, remaining 994 after this pass. |
 | D1 migration, freshness, auth, and retry design | Met as a proposal in this file. Not implemented. |
 
@@ -298,9 +298,10 @@ No anti-bot bypass, proxy, or captcha handling is part of this design.
 
 ## Remaining blockers
 
-- Omkar `store_id` is copied from the request. Identical prices at `4166` and `846` do not prove or disprove store-scoped pricing. Stock quantity did differ.
-- Official Coles HTML was not a readable store listing. No independent shelf price was captured.
-- Half-price listings were absent from specials page 1 and the milk search. Only the already known `8737163` was half price. No ordinary unavailable product was isolated.
+- The Omkar price is `store_price_unverified`. `store_id` is copied from the request. Equal prices at `4166` and `846` are inconclusive. The stock difference only covers quantity.
+- No store-selected source outside Omkar has confirmed a price. Official Coles HTML was an Incapsula page and was not requested again.
+- Specials page 1 did not include a half-price row. The facet count says 1484 half-price products exist, off this page. Listing and bulk cards have no source timestamp.
+- Reliable enumeration of all 7289 specials is not possible through this listing: the gateway cap is 104 pages, which reaches 4992 organic rows.
 - API.SH and Apify were not called with credentials.
 - Omkar self-hosted was not executed, on purpose, because it depends on `curl_cffi`.
 - BFF search is a 404. BFF details do not echo the store.
@@ -309,7 +310,7 @@ No anti-bot bypass, proxy, or captcha handling is part of this design.
 
 ## Next action
 
-Do not start Phase 1. Do not deploy. `PROVIDER_GATE_PARTIAL` and `PHASE_0_PARTIAL`. A later pass may query `special_type=half_price` if the remaining free quota is still available. Do not treat an echoed `store_id` as a store-proven price.
+Do not start Phase 1. Do not deploy. Do not spend more Omkar requests to close this gate. Another hosted call would still echo `store_id` and would not create an independent store price. `PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.
 
 ## Corrective A — Windows build, test, and CI
 
@@ -490,5 +491,61 @@ Two other rows were unavailable and also on special, so they were not counted as
 ### Trust for Phase 1
 
 Not sufficient. The details quote is a real same-day price with a matching bulk price, but the store label is not independent and the two NSW stores returned the same price. Listing rows have no source timestamp. Do not mark these quotes live or store-verified.
+
+`PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.
+
+## Corrective C — offline contract review
+
+**Date:** 2026-11-11, Australia/Sydney
+**Starting HEAD:** `2d84e9c4da4b965d62e516618e1fb8840d16c1db`
+**External requests:** 0. The gitignored Corrective B bodies were re-read locally. No credential was printed or committed.
+**Labels:** `PROVIDER_GATE_PARTIAL`, `PHASE_0_PARTIAL`. Phase 0 is not PASS.
+
+### Pagination
+
+**Measured** on specials page 1: `count` 7289, `per_page` 48, `total_pages` 104, 58 unique product rows. Ten rows have `is_sponsored` true, at positions 2 through 11. The other 48 do not. The sponsored ids are not repeated in the organic rows.
+
+**Measured** on the milk search page: `count` 296, `per_page` 48, `total_pages` 7, 55 unique rows. Seven are sponsored, at positions 2 through 8. The other 48 are not.
+
+**Fact** from public `coles/parsers.py`: `PAGE_SIZE` is 48. `MAX_PAGES` is 104 because the search gateway serves at most 104 pages. `pagination()` sets `total_pages` to `min(ceil(count / 48), 104)`. `listing()` keeps only `_type == "PRODUCT"`. `is_sponsored` is true when the upstream row has `featured` or `adId`. The source comment says those placements are injected on page 1 and most reappear in an organic position on a later page. Page 2 was not fetched, so that reappearance is not a measurement.
+
+`ceil(7289 / 48)` is 152. The reported 104 matches the cap. `104 * 48` is 4992, so 2297 of the 7289 are unreachable on this query. `ceil(296 / 48)` is 7, so the search cap does not bind. `per_page` matches the non-sponsored count, not the array length. The extra rows are sponsored product cards, not a broken page size.
+
+Public `products.py` sends `excludeAds=true`. The hosted page still included sponsored product rows. The flag does not remove `featured` / `adId` product cards from the parsed list. Dropped `PRODUCT_ASSOCIATION` tiles are a different source category and are not in `count`.
+
+Complete catalogue enumeration is **not possible** for this specials result. It is **not proven** for the milk search: sponsored rows sit outside the 48-row window, and only page 1 was saved. The `next` URL carries `page` and `store` (and `query` for search) and no credential parameter.
+
+### Promotions
+
+| Kind | Evidence | Label |
+| --- | --- | --- |
+| Half price | `8737163`: price 6, was 12, save percent 50, description `1/2 Price`, `percent_off`. Not present on specials page 1 or the milk page. | `promotion_confirmed` / `half_price` |
+| Ordinary special | Eight specials-page rows have a former price. Save percents are 15, 23, or 30. All eight are `is_sponsored`. None of the 48 organic specials rows have a former price. | `promotion_confirmed` / `ordinary_special` |
+| Multibuy | 24 specials rows, every `min_quantity` 2. The shelf `price` equals neither `price_each` nor `total_price`. One row is shelf 6, each 4, total 8, offer text "Pick any 2 for $8". Two of the three sample multibuy SKUs are sponsored; `3615657` is organic. | `promotion_confirmed` / `multibuy` |
+| Special without a former price | 26 organic specials rows, plus search rows with `promotion_type` `everyday` or `special` and no `was_price`. No offer text. | `promotion_ambiguous` |
+| Regular | Search rows with no promotion and no former price. Three of the five sample regulars are sponsored. | `promotion_confirmed` / `regular` |
+| Unavailable | `1501351` and `4873250` are unavailable and also on special. | availability `unavailable`; promotion still ambiguous |
+
+The specials facet counts, which are catalogue counts rather than page rows, are all 7289, multi_buy 1921, half_price 1484, online_only 227. Those three subsets do not add up to 7289. Page 1 of `special_type=all` therefore does not represent half price or online-only. `is_online_only_special` is false on every saved row. Currency is AUD on every saved row. Listing and bulk cards have no `last_updated`. Bulk also has `available_quantity` null on all 20 while `is_available` is true. That is `historical_cached` for freshness and `available` for stock state, with quantity absent. Bulk prices and promotion fields still match the 20 saved quotes.
+
+### Store scope
+
+**Fact:** `details` sends GraphQL `storeId=COL:{store}` and BFF `storeId`. `bulk` sends `brandedStoreId=COL:{store}`. Listings send `storeId`. `product_card` and `product_details` assign `store_id` from that argument. Omitting `store` uses `COLES_DEFAULT_STORE_ID`.
+
+**Measured:** the `4166` and `846` details bodies differ only in `store_id` and `available_quantity` (257 versus 399). Price, former price, promotion, and `last_updated` (`2026-11-11T11:41:07Z`) match. The shared timestamp is not a per-store observation. Equal prices are inconclusive. The stock difference shows the store parameter changed quantity. It does not independently verify the price. Classification: `schema_valid`, `store_parameter_forwarded`, `store_price_unverified`, `freshly_fetched`, `promotion_confirmed`.
+
+### Tests
+
+`packages/adapters/src/evidence/contract.ts` locks those labels. The tests use synthetic quotes and the aggregate page counts above. They do not read `tmp/`.
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `pnpm test` | 0 | adapters 16 passed, including 11 contract tests; rules 4 passed; database and queue smoke scripts passed |
+| `pnpm lint` | 0 | ESLint completed |
+| `pnpm --filter @easypws/adapters typecheck` | 0 | `tsc --noEmit` |
+
+### Further requests
+
+Not justified for this gate. A half-price specials call would sample a facet that page 1 missed, and it would not make `store_id` independent. Page 2 would not change the cap arithmetic. Do not call Coles HTML to bypass the earlier Incapsula response.
 
 `PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.

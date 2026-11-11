@@ -1,7 +1,7 @@
 # EasyPWS V2 — Phase 0 provider probe protocol
 
 **Date:** 2026-11-11  
-**Execution status:** PARTIAL — Corrective B called Omkar with store `4166`. Sanitized evidence is in [phase-00-results.md](./phase-00-results.md). The price is not store-proven.  
+**Execution status:** PARTIAL — Corrective C reviewed the saved Omkar fixtures offline. Sanitized evidence is in [phase-00-results.md](./phase-00-results.md). The price is not store-proven. No further hosted requests are justified for this gate.  
 **Safety:** Read-only, rate-limited requests; no stored credentials in repo, screenshots or logs. Stop on access denial, bot challenges or disallowed use. Never work around anti-bot protection, rotate identities to defeat controls, or infer authorization from public visibility.
 
 ## Hypothesis
@@ -27,6 +27,9 @@ An inexpensive hosted source can supply an NSW-store-aware Watchlist of fresh di
 - The Omkar public example defaults to store ID `584` (Burwood East, VIC). EasyPWS must set a **confirmed NSW store** explicitly; never silently default to VIC.
 - Hosted and self-hosted Omkar share adapter semantics and might share upstream Coles BFF/GraphQL. Report `upstream_family="coles"` for both; separate host reliability does not establish independent upstream reliability.
 - The README currently references a RapidAPI 1,000 calls/month free plan. Verify the live plan rather than treating README as a guaranteed current contract.
+- Public `parsers.listing` keeps `_type == "PRODUCT"` rows and sets `is_sponsored` from `featured` or `adId`. `PAGE_SIZE` is 48 and `MAX_PAGES` is 104. `per_page` is that page size, not the length of `products`.
+- Public `_run` sends `excludeAds=true` and `storeId`. The captured hosted page still contained sponsored product rows, so that flag does not remove them from the parsed list.
+- `classifyQuote`, `assessListingPage`, and `compareStoreQuotes` in `packages/adapters/src/evidence/contract.ts` encode the labels below. Tests use synthetic quotes, not raw responses.
 
 ## Test design (perform manually / with Cursor's isolated diagnostic runner)
 
@@ -85,3 +88,11 @@ Log only approved evidence and sanitized response excerpts; retain full raw payl
 ## Acceptance gate
 
 Phase 0 cannot be marked PASS until: baseline tests/build verified; one selected NSW store verified; 20 real test SKU evidence collected; at least one provider returns valid fresh data; provider quotas and restrictions established; Cloudflare architecture and D1 migration design accepted. Failure to access a provider is a BLOCKED result, not a simulated PASS.
+
+Corrective C applies that gate as follows. These readings do not relax it.
+
+- A store-directory hit for `4166` verifies the store identity. It does not verify a later price.
+- `store_parameter_forwarded` means the client source sends the store upstream. `store_price_independently_verified` requires a store-selected source outside the provider. An echoed `store_id` never supplies that.
+- Equal prices at two stores are inconclusive. A stock difference verifies quantity only.
+- `freshly_fetched` means the record has a source timestamp. Listing and bulk cards without one are `historical_cached` on that axis.
+- Walking specials pages cannot be required for PASS. The measured total of 7289 is larger than the 104-page cap.
