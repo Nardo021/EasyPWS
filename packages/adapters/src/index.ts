@@ -34,6 +34,7 @@ export {
   ManualClock,
   ProviderRouter,
   systemRouterClock,
+  type BulkIntegrity,
   type CollectionRouteResult,
   type ProductRouteResult,
   type RouterClock,

@@ -35,7 +35,6 @@ function product(overrides: Partial<RawProviderProduct> = {}): RawProviderProduc
     multiBuy: null,
     isAvailable: true,
     sourceTimestamp: null,
-    cacheProvenance: null,
     httpStatus: 200,
     ...overrides,
   };
@@ -158,14 +157,31 @@ describe("quote normalization", () => {
       requestedProductId: "8737163",
       retrievedAt: "2026-11-11T02:00:00.000Z",
       assessedAt: "2026-11-11T02:00:00.000Z",
-      product: product({ echoedStoreId: "4166", upstreamStoreParameterSent: true }),
+      product: product({
+        echoedStoreId: "4166",
+        claims: { upstreamStoreParameterSent: true, independentStorePrice: true },
+      }),
+    });
+    const trusted = normalizeProductQuote({
+      retailerId: "coles",
+      providerId: "fixture-a",
+      upstreamFamily: "coles",
+      requestedStoreId: "4166",
+      requestedProductId: "8737163",
+      retrievedAt: "2026-11-11T02:00:00.000Z",
+      assessedAt: "2026-11-11T02:00:00.000Z",
+      product: product({ echoedStoreId: "4166" }),
+      trusted: { upstreamStoreParameterSent: true },
     });
     expect(result.ok).toBe(true);
-    if (!result.ok) {
+    if (!result.ok || !trusted.ok) {
       return;
     }
-    expect(result.quote.storeParameter).toBe("store_parameter_forwarded");
+    expect(result.quote.storeParameter).toBe("store_parameter_unknown");
     expect(result.quote.storePrice).toBe("store_price_unverified");
+    expect(result.quote.provenanceClaims.independentStorePrice).toBe(true);
+    expect(trusted.quote.storeParameter).toBe("store_parameter_forwarded");
+    expect(trusted.quote.storePrice).toBe("store_price_unverified");
     expect(result.quote.notificationEligible).toBe(false);
     expect(result.quote.confirmedLiveSpecial).toBe(false);
   });
@@ -189,14 +205,18 @@ describe("quote normalization", () => {
       requestedProductId: "8737163",
       retrievedAt: "2026-11-11T02:00:00.000Z",
       assessedAt: "2026-11-11T02:00:00.000Z",
-      product: product({ sourceTimestamp: CURRENT_SOURCE, cacheProvenance: "not_cached" }),
+      product: product({
+        sourceTimestamp: CURRENT_SOURCE,
+        claims: { cacheProvenance: "not_cached", freshnessConfirmed: true },
+      }),
     });
     expect(missing.ok && missing.quote.sourceAge).toBe("unknown");
     expect(missing.ok && missing.quote.freshness).toBe("unknown");
     expect(missing.ok && missing.quote.cacheProvenance).toBe("unknown");
     expect(current.ok && current.quote.sourceAge).toBe("current");
     expect(current.ok && current.quote.freshness).toBe("unknown");
-    expect(current.ok && current.quote.cacheProvenance).toBe("not_cached");
+    expect(current.ok && current.quote.cacheProvenance).toBe("unknown");
+    expect(current.ok && current.quote.provenanceClaims.freshnessConfirmed).toBe(true);
     expect(current.ok && current.quote.notificationEligible).toBe(false);
   });
 
@@ -254,10 +274,10 @@ describe("quote normalization", () => {
         price: 3.9,
         isOnSpecial: true,
         promotionType: "everyday",
-        independentStorePrice: true,
-        freshnessConfirmed: true,
         sourceTimestamp: CURRENT_SOURCE,
+        claims: { independentStorePrice: true, freshnessConfirmed: true },
       }),
+      trusted: { independentStorePrice: true, freshnessConfirmed: true },
     });
     expect(!unknownStock.ok && unknownStock.error.reason).toBe("schema_invalid");
     expect(ambiguous.ok && ambiguous.quote.promotion).toBe("promotion_ambiguous");
@@ -582,27 +602,10 @@ describe("provider router", () => {
     expect(result.notificationEligible).toBe(false);
   });
 
-  it("allows a notification only for an explicit outside price that is also fresh and confirmed", async () => {
+  it("does not let provider-controlled flags enable a notification", async () => {
     const clock = new ManualClock(ASSESSED_AT);
-    const eligible = createFixtureProvider({
+    const provider = createFixtureProvider({
       identity: { retailerId: "coles", providerId: "outside", upstreamFamily: "coles" },
-      capabilities: capabilities(),
-      clock,
-      productDetails: quoteScript({
-        echoedStoreId: null,
-        price: 6,
-        wasPrice: 12,
-        isOnSpecial: true,
-        promotionType: "special",
-        priceDescription: "1/2 Price",
-        savePercent: 50,
-        sourceTimestamp: CURRENT_SOURCE,
-        freshnessConfirmed: true,
-        independentStorePrice: true,
-      }),
-    });
-    const unverified = createFixtureProvider({
-      identity: { retailerId: "coles", providerId: "echo", upstreamFamily: "coles" },
       capabilities: capabilities(),
       clock,
       productDetails: quoteScript({
@@ -614,24 +617,35 @@ describe("provider router", () => {
         priceDescription: "1/2 Price",
         savePercent: 50,
         sourceTimestamp: CURRENT_SOURCE,
-        freshnessConfirmed: true,
+        claims: {
+          freshnessConfirmed: true,
+          independentStorePrice: true,
+          upstreamStoreParameterSent: true,
+          cacheProvenance: "not_cached",
+        },
       }),
     });
-    const eligibleResult = await routerFor([eligible], clock).getProductDetails("coles", {
+    const router = routerFor([provider], clock);
+    const claimed = await router.getProductDetails("coles", {
       retailerProductId: "8737163",
       externalStoreId: "4166",
     });
-    const unverifiedResult = await routerFor([unverified], clock).getProductDetails("coles", {
-      retailerProductId: "8737163",
-      externalStoreId: "4166",
-    });
-    expect(eligibleResult.quote?.notificationEligible).toBe(true);
-    expect(eligibleResult.quote?.confirmedLiveSpecial).toBe(true);
-    expect(eligibleResult.upstreamEvidence).toBe("explicit_outside_source");
-    expect(unverifiedResult.quote?.storePrice).toBe("store_price_unverified");
-    expect(unverifiedResult.quote?.freshness).toBe("fresh");
-    expect(unverifiedResult.notificationEligible).toBe(false);
-    expect(unverifiedResult.upstreamEvidence).toBe("not_independent");
+    const trusted = await router.getProductDetails(
+      "coles",
+      { retailerProductId: "8737163", externalStoreId: "4166" },
+      { independentStorePrice: true, freshnessConfirmed: true },
+    );
+    expect(claimed.quote?.storePrice).toBe("store_price_unverified");
+    expect(claimed.quote?.freshness).toBe("unknown");
+    expect(claimed.quote?.storeParameter).toBe("store_parameter_unknown");
+    expect(claimed.quote?.cacheProvenance).toBe("unknown");
+    expect(claimed.quote?.provenanceClaims.independentStorePrice).toBe(true);
+    expect(claimed.notificationEligible).toBe(false);
+    expect(claimed.quote?.confirmedLiveSpecial).toBe(false);
+    expect(trusted.quote?.storePrice).toBe("store_price_independently_verified");
+    expect(trusted.quote?.freshness).toBe("fresh");
+    expect(trusted.quote?.notificationEligible).toBe(true);
+    expect(trusted.upstreamEvidence).toBe("explicit_outside_source");
   });
 
   it("skips search when that capability is absent and does not notify", async () => {
@@ -692,5 +706,139 @@ describe("provider router", () => {
     expect(provider.calls.productDetails).toBe(1);
     expect(router.health("provider-a").circuit).toBe("open");
     expect(again.diagnostics[0]?.reason).toBe("circuit_open");
+  });
+
+  it("allows only one in-flight half-open probe", async () => {
+    const clock = new ManualClock(ASSESSED_AT);
+    let mode: "hang" | "ok" = "hang";
+    const provider = createFixtureProvider({
+      identity: { retailerId: "coles", providerId: "provider-a", upstreamFamily: "coles" },
+      capabilities: capabilities(),
+      clock,
+      productDetails: () => (mode === "hang" ? { kind: "hang" } : quoteScript()),
+    });
+    const router = routerFor([provider], clock);
+    await settle(
+      clock,
+      router.getProductDetails("coles", { retailerProductId: "8737163", externalStoreId: "4166" }),
+      50,
+    );
+    await settle(
+      clock,
+      router.getProductDetails("coles", { retailerProductId: "8737163", externalStoreId: "4166" }),
+      50,
+    );
+    clock.advance(1_000);
+    const first = router.getProductDetails("coles", {
+      retailerProductId: "8737163",
+      externalStoreId: "4166",
+    });
+    const second = await router.getProductDetails("coles", {
+      retailerProductId: "8737163",
+      externalStoreId: "4166",
+    });
+    expect(provider.calls.productDetails).toBe(3);
+    expect(second.outcome).toBe("unavailable");
+    expect(second.diagnostics[0]?.reason).toBe("probe_in_flight");
+    expect(second.diagnostics[0]?.calls).toBe(0);
+    await settle(clock, first, 50);
+    expect(router.health("provider-a").circuit).toBe("open");
+    clock.advance(1_000);
+    mode = "ok";
+    const recovered = router.getProductDetails("coles", {
+      retailerProductId: "8737163",
+      externalStoreId: "4166",
+    });
+    const blocked = await router.getProductDetails("coles", {
+      retailerProductId: "8737163",
+      externalStoreId: "4166",
+    });
+    expect(blocked.diagnostics[0]?.reason).toBe("probe_in_flight");
+    expect(provider.calls.productDetails).toBe(4);
+    await recovered;
+    expect(router.health("provider-a").circuit).toBe("closed");
+  });
+
+  it("keeps an empty search or specials result without applying bulk completeness", async () => {
+    const clock = new ManualClock(ASSESSED_AT);
+    const provider = createFixtureProvider({
+      identity: { retailerId: "coles", providerId: "provider-a", upstreamFamily: "coles" },
+      capabilities: capabilities({ search: true, specials: true }),
+      clock,
+    });
+    const router = routerFor([provider], clock);
+    const search = await router.search("coles", { query: "milk", externalStoreId: "4166" });
+    const specials = await router.specials("coles", { externalStoreId: "4166", page: 1 });
+    expect(search.outcome).toBe("selected");
+    expect(search.quotes).toEqual([]);
+    expect(search.bulkIntegrity.status).toBe("not_applicable");
+    expect(search.notificationEligible).toBe(false);
+    expect(specials.outcome).toBe("selected");
+    expect(specials.quotes).toEqual([]);
+    expect(specials.bulkIntegrity.status).toBe("not_applicable");
+  });
+
+  it("does not treat an incomplete bulk response as a complete success", async () => {
+    const clock = new ManualClock(ASSESSED_AT);
+    const incomplete = createFixtureProvider({
+      identity: { retailerId: "coles", providerId: "incomplete", upstreamFamily: "coles" },
+      capabilities: capabilities({ bulkPrices: true, productDetails: false }),
+      clock,
+      bulkPrices: () => ({
+        kind: "quotes",
+        products: [
+          product({ retailerProductId: "sku-a" }),
+          product({ retailerProductId: "sku-a" }),
+          product({ retailerProductId: "sku-c", echoedStoreId: "584" }),
+          product({ retailerProductId: "sku-d" }),
+          product({ retailerProductId: "sku-extra" }),
+        ],
+      }),
+    });
+    const exact = createFixtureProvider({
+      identity: { retailerId: "coles", providerId: "exact", upstreamFamily: "coles" },
+      capabilities: capabilities({ bulkPrices: true, productDetails: false }),
+      clock,
+      bulkPrices: () => ({
+        kind: "quotes",
+        products: [
+          product({
+            retailerProductId: "sku-b",
+            claims: { independentStorePrice: true, freshnessConfirmed: true },
+          }),
+          product({ retailerProductId: "sku-a", echoedStoreId: "4166" }),
+          product({ retailerProductId: "sku-c" }),
+          product({ retailerProductId: "sku-d" }),
+        ],
+      }),
+    });
+    const requested = {
+      retailerProductIds: ["sku-a", "sku-b", "sku-c", "sku-d"],
+      externalStoreId: "4166",
+    };
+    const onlyIncomplete = await routerFor([incomplete], clock).bulkPrices("coles", requested);
+    const recovered = await routerFor([incomplete, exact], clock).bulkPrices("coles", requested);
+    expect(onlyIncomplete.outcome).toBe("partial");
+    expect(onlyIncomplete.notificationEligible).toBe(false);
+    expect(onlyIncomplete.requestedStoreId).toBe("4166");
+    expect(onlyIncomplete.bulkIntegrity.missingIds).toEqual(["sku-b"]);
+    expect(onlyIncomplete.bulkIntegrity.duplicateIds).toEqual(["sku-a"]);
+    expect(onlyIncomplete.bulkIntegrity.unexpectedIds).toEqual(["sku-extra"]);
+    expect(onlyIncomplete.bulkIntegrity.storeMismatchIds).toEqual(["sku-c"]);
+    expect(onlyIncomplete.quotes.map((quote) => quote.retailerProductId)).toEqual(["sku-d"]);
+    expect(onlyIncomplete.quotes[0]?.notificationEligible).toBe(false);
+    expect(onlyIncomplete.quotes[0]?.requestedStoreId).toBe("4166");
+    expect(onlyIncomplete.diagnostics[0]?.reason).toBe("bulk_incomplete");
+    expect(recovered.outcome).toBe("selected");
+    expect(recovered.quotes.map((quote) => quote.retailerProductId)).toEqual([
+      "sku-a",
+      "sku-b",
+      "sku-c",
+      "sku-d",
+    ]);
+    expect(recovered.quotes.every((quote) => quote.requestedStoreId === "4166")).toBe(true);
+    expect(recovered.quotes.every((quote) => quote.notificationEligible === false)).toBe(true);
+    expect(recovered.bulkIntegrity.status).toBe("complete");
+    expect(exact.calls.bulkPrices).toBe(1);
   });
 });

@@ -1,7 +1,9 @@
 import type {
   ProviderError,
+  ProviderProvenanceClaims,
   RawProviderProduct,
   RetailerId,
+  TrustedQuoteEvidence,
   UpstreamFamily,
 } from "@easypws/contracts";
 import { classifyHttpStatus } from "./http.js";
@@ -27,6 +29,8 @@ export interface QuoteNormalizationInput {
   retrievedAt: string;
   assessedAt: string;
   product: RawProviderProduct;
+  /** Caller-supplied evidence. Never copied from `product` or `product.claims`. */
+  trusted?: TrustedQuoteEvidence;
 }
 
 interface NormalizedQuoteFields {
@@ -56,6 +60,13 @@ interface NormalizedQuoteFields {
   availability: AvailabilityVerdict;
   schema: SchemaVerdict;
   httpStatus: number;
+  /** What the provider claimed. This does not feed the verdicts above. */
+  provenanceClaims: {
+    freshnessConfirmed: boolean;
+    independentStorePrice: boolean;
+    upstreamStoreParameterSent: boolean;
+    cacheProvenance: "cached" | "not_cached" | "unknown";
+  };
 }
 
 export type NormalizedProviderQuote =
@@ -104,6 +115,16 @@ function finiteOrNull(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function provenanceClaims(claims: ProviderProvenanceClaims | undefined): NormalizedQuoteFields["provenanceClaims"] {
+  const cache = claims?.cacheProvenance;
+  return {
+    freshnessConfirmed: claims?.freshnessConfirmed === true,
+    independentStorePrice: claims?.independentStorePrice === true,
+    upstreamStoreParameterSent: claims?.upstreamStoreParameterSent === true,
+    cacheProvenance: cache === "cached" || cache === "not_cached" || cache === "unknown" ? cache : "unknown",
+  };
+}
+
 /**
  * Turn sanitized provider fields into a quote.
  * An echoed store id is ignored for verification. A multibuy total is not
@@ -138,10 +159,10 @@ export function normalizeProductQuote(input: QuoteNormalizationInput): Normaliza
     retrievedAt: input.retrievedAt,
     sourceTimestamp: product.sourceTimestamp,
     assessedAt: input.assessedAt,
-    cacheProvenance: product.cacheProvenance,
-    freshnessConfirmed: product.freshnessConfirmed === true,
-    upstreamStoreParameterSent: product.upstreamStoreParameterSent === true,
-    independentStorePrice: product.independentStorePrice === true,
+    cacheProvenance: input.trusted?.cacheProvenance,
+    freshnessConfirmed: input.trusted?.freshnessConfirmed === true,
+    upstreamStoreParameterSent: input.trusted?.upstreamStoreParameterSent === true,
+    independentStorePrice: input.trusted?.independentStorePrice === true,
   });
 
   if (classification.schema !== "schema_valid" || typeof product.price !== "number" || !product.name) {
@@ -184,6 +205,7 @@ export function normalizeProductQuote(input: QuoteNormalizationInput): Normaliza
     availability: classification.availability,
     schema: classification.schema,
     httpStatus: product.httpStatus,
+    provenanceClaims: provenanceClaims(product.claims),
   };
 
   if (eligible) {

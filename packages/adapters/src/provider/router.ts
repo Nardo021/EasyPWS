@@ -15,8 +15,10 @@ import type {
   SpecialsRequest,
   StoreLookupRequest,
   StoreRecord,
+  TrustedQuoteEvidence,
   UpstreamFamily,
 } from "@easypws/contracts";
+import { emptyBulkIntegrity, evaluateBulkResponse, type BulkIntegrity } from "./bulk.js";
 import { ManualClock, systemRouterClock, type RouterClock } from "./clock.js";
 import { classifyHttpStatus } from "./http.js";
 import { normalizeProductQuote, type NormalizedProviderQuote } from "./normalize.js";
@@ -51,10 +53,15 @@ export type CollectionRouteResult = {
   diagnostics: readonly AttemptDiagnostic[];
   notificationEligible: false;
   upstreamEvidence: UpstreamEvidence;
+  requestedStoreId: string;
+  bulkIntegrity: BulkIntegrity;
 } & (
   | { outcome: "selected"; quotes: readonly NormalizedProviderQuote[] }
+  | { outcome: "partial"; quotes: readonly NormalizedProviderQuote[] }
   | { outcome: "unavailable"; quotes: readonly [] }
 );
+
+export type { BulkIntegrity };
 
 export type StoreRouteResult = {
   outcome: "selected" | "unavailable";
@@ -84,6 +91,7 @@ interface HealthState {
   consecutiveTransientFailures: number;
   authBlocked: boolean;
   openedAtMs: number | null;
+  probeInFlight: boolean;
 }
 
 const DEFAULT_BUDGET = 1_000;
@@ -199,13 +207,18 @@ export class ProviderRouter {
     return { circuit: this.healthOf(providerId).circuit };
   }
 
-  getProductDetails(retailerId: RetailerId, request: ProductDetailsRequest): Promise<ProductRouteResult> {
+  getProductDetails(
+    retailerId: RetailerId,
+    request: ProductDetailsRequest,
+    trusted?: TrustedQuoteEvidence,
+  ): Promise<ProductRouteResult> {
     return this.routeProduct(
       retailerId,
       "product_details",
       request.retailerProductId,
       request.externalStoreId,
       (provider, context) => provider.getProductDetails(request, context),
+      trusted,
     );
   }
 
@@ -222,13 +235,7 @@ export class ProviderRouter {
   }
 
   bulkPrices(retailerId: RetailerId, request: BulkPricesRequest): Promise<CollectionRouteResult> {
-    return this.routeCollection(
-      retailerId,
-      "bulk_prices",
-      request.externalStoreId,
-      (provider, context) => provider.bulkPrices(request, context),
-      request.retailerProductIds,
-    );
+    return this.routeBulk(retailerId, request);
   }
 
   lookupStore(retailerId: RetailerId, request: StoreLookupRequest): Promise<StoreRouteResult> {
@@ -241,6 +248,7 @@ export class ProviderRouter {
     requestedProductId: string,
     requestedStoreId: string,
     call: (provider: DataProvider, context: ProviderCallContext) => Promise<ProviderOutcome<RawProviderProduct>>,
+    trusted?: TrustedQuoteEvidence,
   ): Promise<ProductRouteResult> {
     const diagnostics: AttemptDiagnostic[] = [];
     for (const provider of this.providers) {
@@ -275,6 +283,7 @@ export class ProviderRouter {
         retrievedAt,
         assessedAt: retrievedAt,
         product: called.value,
+        ...(trusted ? { trusted } : {}),
       });
       if (!normalized.ok) {
         this.observeFailure(provider.identity.providerId, normalized.error);
@@ -310,7 +319,6 @@ export class ProviderRouter {
       provider: DataProvider,
       context: ProviderCallContext,
     ) => Promise<ProviderOutcome<readonly RawProviderProduct[]>>,
-    expectedProductIds?: readonly string[],
   ): Promise<CollectionRouteResult> {
     const diagnostics: AttemptDiagnostic[] = [];
     for (const provider of this.providers) {
@@ -336,22 +344,12 @@ export class ProviderRouter {
           rejected = { error: classifyHttpStatus(product.httpStatus), httpStatus: product.httpStatus };
           break;
         }
-        const requestedProductId = expectedProductIds
-          ? expectedProductIds.find((id) => id === product.retailerProductId)
-          : product.retailerProductId;
-        if (!requestedProductId) {
-          rejected = {
-            error: { errorClass: "invalid_quote", reason: "wrong_product", retryable: false },
-            httpStatus: product.httpStatus,
-          };
-          break;
-        }
         const normalized = normalizeProductQuote({
           retailerId: provider.identity.retailerId,
           providerId: provider.identity.providerId,
           upstreamFamily: provider.identity.upstreamFamily,
           requestedStoreId,
-          requestedProductId,
+          requestedProductId: product.retailerProductId,
           retrievedAt,
           assessedAt: retrievedAt,
           product,
@@ -381,6 +379,8 @@ export class ProviderRouter {
         quotes,
         notificationEligible: false,
         upstreamEvidence,
+        requestedStoreId,
+        bulkIntegrity: emptyBulkIntegrity(requestedStoreId),
         diagnostics,
       };
     }
@@ -389,6 +389,82 @@ export class ProviderRouter {
       quotes: [],
       notificationEligible: false,
       upstreamEvidence: "not_independent",
+      requestedStoreId,
+      bulkIntegrity: emptyBulkIntegrity(requestedStoreId),
+      diagnostics,
+    };
+  }
+
+  private async routeBulk(retailerId: RetailerId, request: BulkPricesRequest): Promise<CollectionRouteResult> {
+    const diagnostics: AttemptDiagnostic[] = [];
+    const requestedStoreId = request.externalStoreId;
+    let partial: { quotes: readonly NormalizedProviderQuote[]; integrity: BulkIntegrity } | undefined;
+    for (const provider of this.providers) {
+      const skip = this.preflight(provider, retailerId, "bulk_prices");
+      if (skip) {
+        diagnostics.push(skip);
+        continue;
+      }
+      const started = this.config.clock.now();
+      this.consume(provider.identity.providerId);
+      const called = await this.callProvider((context) => provider.bulkPrices(request, context));
+      const elapsedMs = this.config.clock.now() - started;
+      if (!called.ok) {
+        this.observeFailure(provider.identity.providerId, called.error);
+        diagnostics.push(this.failureDiagnostic(provider, "bulk_prices", called.error, elapsedMs));
+        continue;
+      }
+      const retrievedAt = isoUtc(this.config.clock.now());
+      const evaluation = evaluateBulkResponse({
+        retailerId: provider.identity.retailerId,
+        providerId: provider.identity.providerId,
+        upstreamFamily: provider.identity.upstreamFamily,
+        requestedStoreId,
+        requestedProductIds: request.retailerProductIds,
+        products: called.value,
+        retrievedAt,
+        assessedAt: retrievedAt,
+      });
+      if (evaluation.complete) {
+        this.observeSuccess(provider.identity.providerId);
+        diagnostics.push(this.selectedDiagnostic(provider, "bulk_prices", elapsedMs));
+        return {
+          outcome: "selected",
+          quotes: evaluation.quotes,
+          notificationEligible: false,
+          upstreamEvidence: "not_independent",
+          requestedStoreId,
+          bulkIntegrity: evaluation.integrity,
+          diagnostics,
+        };
+      }
+      const error: ProviderError = {
+        errorClass: "invalid_quote",
+        reason: "bulk_incomplete",
+        retryable: false,
+      };
+      this.observeFailure(provider.identity.providerId, error);
+      diagnostics.push(this.failureDiagnostic(provider, "bulk_prices", error, elapsedMs));
+      partial ??= { quotes: evaluation.quotes, integrity: evaluation.integrity };
+    }
+    if (partial) {
+      return {
+        outcome: "partial",
+        quotes: partial.quotes,
+        notificationEligible: false,
+        upstreamEvidence: "not_independent",
+        requestedStoreId,
+        bulkIntegrity: partial.integrity,
+        diagnostics,
+      };
+    }
+    return {
+      outcome: "unavailable",
+      quotes: [],
+      notificationEligible: false,
+      upstreamEvidence: "not_independent",
+      requestedStoreId,
+      bulkIntegrity: emptyBulkIntegrity(requestedStoreId),
       diagnostics,
     };
   }
@@ -489,21 +565,28 @@ export class ProviderRouter {
     if (health.authBlocked) {
       return { ...base, reason: "authorization_blocked", errorClass: "authorization" };
     }
+    if (health.probeInFlight) {
+      return { ...base, reason: "probe_in_flight", errorClass: "circuit_open" };
+    }
     if (health.circuit === "open") {
       const openedAt = health.openedAtMs ?? this.config.clock.now();
       if (this.config.clock.now() < openedAt + this.config.circuitOpenMs) {
         return { ...base, reason: "circuit_open", errorClass: "circuit_open" };
       }
-      health.circuit = "half_open";
     }
     if (this.budgetOf(providerId).remaining <= 0) {
       return { ...base, reason: "budget_exhausted", errorClass: "budget_exhausted" };
+    }
+    if (health.circuit === "open") {
+      health.probeInFlight = true;
+      health.circuit = "half_open";
     }
     return null;
   }
 
   private observeFailure(providerId: string, error: ProviderError): void {
     const health = this.healthOf(providerId);
+    health.probeInFlight = false;
     if (error.errorClass === "authorization") {
       health.authBlocked = true;
       return;
@@ -532,6 +615,7 @@ export class ProviderRouter {
     health.circuit = "closed";
     health.consecutiveTransientFailures = 0;
     health.openedAtMs = null;
+    health.probeInFlight = false;
   }
 
   private failureDiagnostic(
@@ -602,6 +686,7 @@ export class ProviderRouter {
       consecutiveTransientFailures: 0,
       authBlocked: false,
       openedAtMs: null,
+      probeInFlight: false,
     };
     this.healthByProvider.set(providerId, created);
     return created;

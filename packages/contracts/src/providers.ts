@@ -54,6 +54,8 @@ export type DiagnosticReason =
   | "wrong_product"
   | "store_mismatch"
   | "schema_invalid"
+  | "bulk_incomplete"
+  | "probe_in_flight"
   | "selected";
 
 /**
@@ -73,7 +75,29 @@ export interface RawMultiBuy {
   totalPrice?: number | null;
 }
 
-/** Sanitized provider fields. This is not a stored HTTP body. */
+/**
+ * Statements a provider makes about itself.
+ * These are recorded and ignored when judging freshness or store-price proof.
+ */
+export interface ProviderProvenanceClaims {
+  freshnessConfirmed?: boolean;
+  independentStorePrice?: boolean;
+  upstreamStoreParameterSent?: boolean;
+  cacheProvenance?: "cached" | "not_cached" | "unknown" | null;
+}
+
+/**
+ * Evidence from a channel outside the provider payload.
+ * The provider response must not be cast to this type.
+ */
+export interface TrustedQuoteEvidence {
+  independentStorePrice?: boolean;
+  freshnessConfirmed?: boolean;
+  upstreamStoreParameterSent?: boolean;
+  cacheProvenance?: "cached" | "not_cached" | "unknown";
+}
+
+/** Sanitized provider product fields. This is not a stored HTTP body. */
 export interface RawProviderProduct {
   retailerProductId: string;
   /** Copied store id, if the provider sent one. Equality with the request is not verification. */
@@ -90,11 +114,9 @@ export interface RawProviderProduct {
   savePercent?: number | null;
   multiBuy?: RawMultiBuy | null;
   isAvailable?: boolean | null;
+  /** Untrusted provider timestamp. It can show age, not confirmed freshness. */
   sourceTimestamp?: string | null;
-  cacheProvenance?: "cached" | "not_cached" | "unknown" | null;
-  freshnessConfirmed?: boolean;
-  upstreamStoreParameterSent?: boolean;
-  independentStorePrice?: boolean;
+  claims?: ProviderProvenanceClaims;
   httpStatus: number;
 }
 

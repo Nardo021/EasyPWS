@@ -20,6 +20,11 @@ export type FixtureScript =
   | { kind: "hang" }
   | { kind: "quote"; product: RawProviderProduct; delayMs?: number };
 
+export type FixtureListScript =
+  | { kind: "error"; error: ProviderError }
+  | { kind: "hang" }
+  | { kind: "quotes"; products: readonly RawProviderProduct[] };
+
 export interface FixtureCalls {
   productDetails: number;
   search: number;
@@ -47,14 +52,7 @@ function runScript(
     return Promise.resolve({ ok: false, error: script.error });
   }
   if (script.kind === "hang") {
-    return new Promise((_resolve, reject) => {
-      const fail = () => reject(new Error("aborted"));
-      if (context.signal.aborted) {
-        fail();
-        return;
-      }
-      context.signal.addEventListener("abort", fail);
-    });
+    return hang(context);
   }
   const delayMs = script.delayMs ?? 0;
   if (delayMs <= 0) {
@@ -76,11 +74,23 @@ function runScript(
   });
 }
 
+function hang(context: ProviderCallContext): Promise<never> {
+  return new Promise((_resolve, reject) => {
+    const fail = () => reject(new Error("aborted"));
+    if (context.signal.aborted) {
+      fail();
+      return;
+    }
+    context.signal.addEventListener("abort", fail);
+  });
+}
+
 export function createFixtureProvider(options: {
   identity: ProviderIdentity;
   capabilities: ProviderCapabilities;
   clock: RouterClock;
   productDetails?: FixtureScript | ((request: ProductDetailsRequest) => FixtureScript);
+  bulkPrices?: (request: BulkPricesRequest) => FixtureListScript;
 }): FixtureProvider {
   const calls: FixtureCalls = {
     productDetails: 0,
@@ -119,12 +129,22 @@ export function createFixtureProvider(options: {
       calls.specials += 1;
       return { ok: true, value: [] };
     },
-    async bulkPrices(_request: BulkPricesRequest, _context) {
+    async bulkPrices(request, context) {
       if (!options.capabilities.bulkPrices) {
         return { ok: false, error: UNSUPPORTED };
       }
       calls.bulkPrices += 1;
-      return { ok: true, value: [] };
+      if (!options.bulkPrices) {
+        return { ok: true, value: [] };
+      }
+      const script = options.bulkPrices(request);
+      if (script.kind === "error") {
+        return { ok: false, error: script.error };
+      }
+      if (script.kind === "hang") {
+        return hang(context);
+      }
+      return { ok: true, value: script.products };
     },
     async lookupStore(request: StoreLookupRequest, _context): Promise<ProviderOutcome<StoreRecord>> {
       if (!options.capabilities.storeLookup) {

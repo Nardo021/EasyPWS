@@ -27,10 +27,10 @@ Normalization uses `classifyQuote` in `packages/adapters/src/evidence/contract.t
 
 - `retrievedAt` is the router clock. It is not freshness.
 - `sourceTimestamp` is copied from the provider. Missing and invalid timestamps stay `unknown`.
-- A source timestamp inside 24 hours is `current`. It becomes `fresh` only when `freshnessConfirmed` is also set.
-- `cacheProvenance` stays `unknown` unless the fixture passes an explicit cache flag.
-- `upstreamStoreParameterSent` is the only input for `store_parameter_forwarded`.
-- `independentStorePrice` is the only input for `store_price_independently_verified`. An echoed store id, including one equal to the request, is not that input.
+- A source timestamp inside 24 hours is `current`. It becomes `fresh` only when trusted evidence sets `freshnessConfirmed`.
+- Provider `claims` may say the price is independent, the quote is fresh, the store parameter was forwarded, or the response was cached. Those claims are stored on `provenanceClaims` and are not passed to `classifyQuote`.
+- `TrustedQuoteEvidence` is a separate argument. It is the only input for `store_price_independently_verified`, `fresh`, `store_parameter_forwarded`, and a non-unknown cache verdict.
+- An echoed store id, including one equal to the request, is not that input.
 - A multibuy total stays on `multiBuyTotalAud`. `singleItemPriceFromOffer` is always null.
 - Unknown availability fails the existing schema check and is not a quote.
 - An ambiguous promotion can be returned for review. `notificationEligible` and `confirmedLiveSpecial` stay false.
@@ -45,7 +45,9 @@ A quote is notification-eligible only when all of these are true: schema valid, 
 - Authorization is remembered on that router instance. A later route does not call that provider again. It is not treated as a timeout.
 - Rate limit opens the circuit immediately. There is no `Retry-After` retry.
 - Timeout and upstream unavailability count toward the configured failure threshold. The clock is injected. Tests advance `ManualClock`.
-- After the open interval, one probe can close the circuit.
+- After the open interval, one half-open probe may run. A second in-flight request sees `probe_in_flight` and does not call the provider.
+- Bulk prices succeed only when the returned ids are exactly the requested ids, each once, for the requested store, and every row normalizes. Missing, duplicate, unexpected, or store-mismatched ids are `partial` or fail over. They are not `selected`.
+- An empty search or specials list can be `selected`. That rule is not used for bulk.
 - The first schema-valid quote stops the route. Later providers are not called.
 - If every provider fails or is skipped, the outcome is `unavailable` and `quote` is null.
 - Two providers with `upstreamFamily: "coles"` do not create independent store evidence. A different family does not create it either. `explicit_outside_source` is set only when the selected quote already has `store_price_independently_verified`.
@@ -56,7 +58,7 @@ Diagnostics use fixed reason codes. They do not include response bodies or crede
 
 ## Tests
 
-`packages/adapters/src/provider/router.test.ts` covers provider fallback, total failure, unsupported search and product details, missing store, wrong product, invalid price schema, budget exhaustion, timeout, circuit open and recovery, authorization without a later retry, rate limit, ambiguous promotions, unknown freshness, shared Coles upstream, echoed store ids, and the explicit outside-source gate.
+`packages/adapters/src/provider/router.test.ts` covers provider fallback, total failure, unsupported search and product details, missing store, wrong product, invalid price schema, budget exhaustion, timeout, circuit open and recovery, one in-flight half-open probe, authorization without a later retry, rate limit, ambiguous promotions, unknown freshness, shared Coles upstream, echoed store ids, provider claims that cannot enable a notification, trusted evidence that can, empty search and specials, and incomplete bulk sets.
 
 Existing evidence, Coles adapter, rules, database, and queue tests stay in place.
 
@@ -89,5 +91,24 @@ Both runs passed on Ubuntu and Windows. Each run has `install-build-test` and `f
 | --- | --- | --- |
 | push | success | https://github.com/Nardo021/EasyPWS/actions/runs/43027391436 |
 | pull_request | success | https://github.com/Nardo021/EasyPWS/actions/runs/43027417477 |
+
+`PHASE_1A_LOCAL_PASS`. `PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.
+
+## Corrective — trust boundary
+
+**Date:** 2026-11-12, Australia/Sydney  
+**Starting SHA:** `ca6b0fe89bd7e69da00ae197658bbdc554984599`  
+**Review:** PR #4, independent review on 2026-11-12.
+
+Provider `claims` cannot certify store price or freshness. `TrustedQuoteEvidence` is a separate argument. Without it, a quote stays `review_only`. Bulk success requires the exact requested SKU set, each once, at the requested store. An incomplete bulk result is `partial` and can fail over. Search and specials may be empty. Only one half-open probe may be in flight.
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `pnpm build` | 0 | 8 libraries, Next.js static export, API `tsc`. |
+| `pnpm typecheck` | 0 | Workspace typecheck completed. |
+| `pnpm test` | 0 | adapters 45 passed, rules 4 passed, database smoke ok, queue smoke ok. |
+| `pnpm lint` | 0 | ESLint completed. |
+
+No external provider request. Phase 0 labels are unchanged. Live integration is not started.
 
 `PHASE_1A_LOCAL_PASS`. `PROVIDER_GATE_PARTIAL`. `PHASE_0_PARTIAL`.
