@@ -10,6 +10,7 @@ import {
   type Env,
 } from "./catalogue.js";
 import { COLES_MARRICKVILLE_STORE_ID } from "@easypws/adapters/omkar";
+import { monitorUsage, runMonitor } from "./monitor.js";
 import {
   getItem,
   history,
@@ -58,12 +59,15 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   const copy = sourceCopy(live);
 
   if (method === "GET" && path === "/api/v1/health") {
+    const usage = await monitorUsage(env);
     return json({
       ok: true,
       runtime: "workerd-local",
       mode: live ? "live" : "fixture",
       storeId: COLES_MARRICKVILLE_STORE_ID,
       externalRequests: await externalRequestCount(env),
+      monitorBudget: usage.budget,
+      monitorUsedToday: usage.usedToday,
     });
   }
 
@@ -196,5 +200,8 @@ export default {
       }
       return json({ message: "本地服务暂时失败" }, 500);
     }
+  },
+  async scheduled(_controller, env): Promise<void> {
+    await runMonitor(env);
   },
 } satisfies ExportedHandler<Env>;

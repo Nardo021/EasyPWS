@@ -93,6 +93,12 @@ function fixtureBody(operation: "search" | "details", query: string): { status: 
   if (query === String(MILK.id)) {
     return { status: 200, body: MILK };
   }
+  if (query === "1001") {
+    return {
+      status: 200,
+      body: { id: 1001, name: "Unpriced sample", store_id: COLES_MARRICKVILLE_STORE_ID, is_available: true },
+    };
+  }
   return { status: 404, body: null };
 }
 
