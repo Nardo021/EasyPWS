@@ -24,43 +24,46 @@ export default function HomePage() {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [localMode, setLocalMode] = useState(false);
+  const [searched, setSearched] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [points, setPoints] = useState<PricePoint[]>([]);
   const [targetDrafts, setTargetDrafts] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
-
-  useEffect(() => {
-    const existing = getStoredToken();
-    setSavedToken(existing);
-    setTokenInput(existing);
-  }, []);
 
   const selectedItem = useMemo(
     () => items.find((i) => i.listingId === selected) ?? null,
     [items, selected],
   );
 
+  function applyItems(nextItems: WatchlistItem[]) {
+    setItems(nextItems);
+    setTargetDrafts((prev) => {
+      const next = { ...prev };
+      for (const item of nextItems) {
+        if (next[item.watchlistItemId] === undefined) {
+          next[item.watchlistItemId] =
+            item.targetPrice !== undefined ? String(item.targetPrice) : "";
+        }
+      }
+      return next;
+    });
+    if (!selected && nextItems[0]) {
+      setSelected(nextItems[0].listingId);
+    }
+  }
+
   function refreshList() {
     startTransition(async () => {
       setError(null);
       try {
         const data = await easypwsApi.listWatchlist();
-        setItems(data.items);
-        setTargetDrafts((prev) => {
-          const next = { ...prev };
-          for (const item of data.items) {
-            if (next[item.watchlistItemId] === undefined) {
-              next[item.watchlistItemId] =
-                item.targetPrice !== undefined ? String(item.targetPrice) : "";
-            }
-          }
-          return next;
-        });
-        if (!selected && data.items[0]) {
-          setSelected(data.items[0].listingId);
+        applyItems(data.items);
+        if (!localMode) {
+          const me = await easypwsApi.me();
+          setInfo(`已登录 ${me.email}`);
         }
-        const me = await easypwsApi.me();
-        setInfo(`已登录 ${me.email}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -68,10 +71,50 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    if (savedToken) {
-      refreshList();
-    }
-  }, [savedToken]);
+    const existing = getStoredToken();
+    setSavedToken(existing);
+    setTokenInput(existing);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const me = await easypwsApi.me();
+        if (cancelled) {
+          return;
+        }
+        if (me.mode === "local") {
+          setLocalMode(true);
+          setBanner(
+            [me.storeName, me.storeId ? `门店 ${me.storeId}` : "", me.sourceLabel, me.priceNote]
+              .filter(Boolean)
+              .join(" · "),
+          );
+          const data = await easypwsApi.listWatchlist();
+          if (!cancelled) {
+            applyItems(data.items);
+          }
+          return;
+        }
+        if (!existing) {
+          return;
+        }
+        const data = await easypwsApi.listWatchlist();
+        if (!cancelled) {
+          applyItems(data.items);
+          setInfo(`已登录 ${me.email}`);
+        }
+      } catch (err) {
+        if (cancelled || !existing) {
+          return;
+        }
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!selected) {
@@ -94,6 +137,10 @@ export default function HomePage() {
         监控 Coles 价格、半价与历史最低 —— 独立于 Home Assistant。
       </p>
 
+      {banner ? <p className="meta">{banner}</p> : null}
+      {pending ? <p className="meta">正在处理…</p> : null}
+      {localMode ? null : (
+      <>
       <section className="row">
         <input
           type={showToken ? "text" : "password"}
@@ -147,6 +194,8 @@ export default function HomePage() {
           首次部署：`journalctl -u easypws -n 100 | grep BOOTSTRAP_TOKEN`
         </p>
       )}
+      </>
+      )}
       {info ? <p className="meta">{info}</p> : null}
 
       <section className="panel">
@@ -165,6 +214,7 @@ export default function HomePage() {
                 setError(null);
                 try {
                   const data = await easypwsApi.search(query.trim());
+                  setSearched(true);
                   setSearchResults(data.items);
                 } catch (err) {
                   setSearchResults([]);
@@ -216,6 +266,8 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+        ) : searched ? (
+          <p className="meta">没有匹配的商品。</p>
         ) : null}
       </section>
 
@@ -263,7 +315,9 @@ export default function HomePage() {
         <h2 className="section-title">Watchlist</h2>
         {items.length === 0 ? (
           <p className="meta">
-            还没有监控商品。先保存 Token，再粘贴 Coles URL。
+            {localMode
+              ? "还没有监控商品。搜索，或粘贴 Coles 商品链接。"
+              : "还没有监控商品。先保存 Token，再粘贴 Coles URL。"}
           </p>
         ) : (
           items.map((item) => (
@@ -280,7 +334,9 @@ export default function HomePage() {
                   </button>
                 </h3>
                 <div className="meta">
+                  {item.storeName ? `${item.storeName} · ` : ""}
                   {item.retailer} · {item.promotionType}
+                  {item.availabilityLabel ? ` · ${item.availabilityLabel}` : ""}
                   {item.discountPercentage !== undefined
                     ? ` · -${item.discountPercentage}%`
                     : ""}
@@ -288,6 +344,17 @@ export default function HomePage() {
                   历史最低 {item.historicalLow ?? "—"} ·{" "}
                   {item.monitoringStatus === "active" ? "监控中" : "已暂停"}
                   <br />
+                  {item.sourceLabel ? `${item.sourceLabel} · ` : ""}
+                  {item.lastCheckedAt
+                    ? `上次获取 ${new Date(item.lastCheckedAt).toLocaleString("zh-CN")}`
+                    : "尚未获取"}
+                  <br />
+                  {item.priceNote ? (
+                    <>
+                      {item.priceNote}
+                      <br />
+                    </>
+                  ) : null}
                   <a href={item.productUrl} target="_blank" rel="noreferrer">
                     打开商品页
                   </a>
@@ -339,7 +406,9 @@ export default function HomePage() {
                         setError(null);
                         try {
                           await easypwsApi.refresh(item.watchlistItemId);
-                          setInfo("已排队刷新");
+                          const data = await easypwsApi.listWatchlist();
+                          applyItems(data.items);
+                          setInfo(localMode ? "已刷新报告价" : "已排队刷新");
                         } catch (err) {
                           setError(
                             err instanceof Error ? err.message : String(err),

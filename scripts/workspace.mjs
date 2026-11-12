@@ -17,7 +17,7 @@ const LIBRARY_PACKAGES = [
   "@easypws/services",
 ];
 
-const APP_PACKAGES = ["@easypws/api", "@easypws/web"];
+const APP_PACKAGES = ["@easypws/api", "@easypws/web", "@easypws/lite"];
 
 const TEST_PACKAGES = [
   "@easypws/adapters",
