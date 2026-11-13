@@ -81,13 +81,16 @@ export default function HomePage() {
         if (cancelled) {
           return;
         }
-        if (me.mode === "local") {
+        if (me.mode === "local" || me.mode === "private") {
           setLocalMode(true);
           setBanner(
             [me.storeName, me.storeId ? `门店 ${me.storeId}` : "", me.sourceLabel, me.priceNote]
               .filter(Boolean)
               .join(" · "),
           );
+          if (me.mode === "private") {
+            setInfo(`已通过 Cloudflare Access 登录 ${me.email}`);
+          }
           const data = await easypwsApi.listWatchlist();
           if (!cancelled) {
             applyItems(data.items);

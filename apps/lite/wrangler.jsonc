@@ -5,7 +5,8 @@
   "compatibility_date": "2026-11-12",
   "workers_dev": false,
   "preview_urls": false,
-  // No triggers.crons in this phase. scheduled() is local-only until a later deploy.
+  // No triggers.crons. Remote Cron stays off until a separate activation approval.
+  // easypws.yanze.me currently points at the Home tunnel. Do not add that route here.
   "observability": {
     "enabled": true,
     "traces": {
@@ -15,7 +16,7 @@
   "assets": {
     "directory": "../web/out",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": true
   },
   "d1_databases": [
     {
@@ -24,5 +25,32 @@
       "database_id": "00000000-0000-0000-0000-000000000001",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  "env": {
+    "production": {
+      "name": "easypws",
+      "workers_dev": false,
+      "preview_urls": false,
+      "assets": {
+        "directory": "../web/out",
+        "binding": "ASSETS",
+        "run_worker_first": true
+      },
+      "vars": {
+        "EASYPWS_RUNTIME": "production"
+      },
+      "secrets": {
+        "required": ["OMKAR_API_KEY"]
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "easypws",
+          // Placeholder only. Replace with the id from an approved `wrangler d1 create easypws`.
+          "database_id": "00000000-0000-4000-8000-0000000000d1",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
 }
