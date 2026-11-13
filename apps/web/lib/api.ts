@@ -82,7 +82,7 @@ export interface WatchlistItem {
 export interface LocalSession {
   email: string;
   scopes: string[];
-  mode?: "local";
+  mode?: "local" | "private";
   sourceLabel?: string;
   storeId?: string;
   storeName?: string;

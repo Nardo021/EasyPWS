@@ -13,6 +13,7 @@ export interface Env {
   OMKAR_API_KEY?: string;
   RAPIDAPI_KEY?: string;
   EASYPWS_OMKAR_MODE?: string;
+  EASYPWS_RUNTIME?: string;
 }
 
 const HOST = "best-coles-scraper-free-1000-calls.p.rapidapi.com";
@@ -26,12 +27,31 @@ export class HttpError extends Error {
   }
 }
 
-export function omkarMode(env: Env): "live" | "fixture" {
-  const key = (env.OMKAR_API_KEY ?? env.RAPIDAPI_KEY ?? "").trim();
-  if (env.EASYPWS_OMKAR_MODE === "fixture" || key.length === 0) {
+export function isProduction(env: Env): boolean {
+  return env.EASYPWS_RUNTIME === "production";
+}
+
+export function omkarKey(env: Env): string {
+  return (env.OMKAR_API_KEY ?? env.RAPIDAPI_KEY ?? "").trim();
+}
+
+/** Production never uses fixture data, even when fixture mode is requested. */
+export function omkarMode(env: Env): "live" | "fixture" | "unavailable" {
+  if (isProduction(env)) {
+    return omkarKey(env).length > 0 && env.EASYPWS_OMKAR_MODE !== "fixture" ? "live" : "unavailable";
+  }
+  if (env.EASYPWS_OMKAR_MODE === "fixture" || omkarKey(env).length === 0) {
     return "fixture";
   }
   return "live";
+}
+
+export function assertOmkarReady(env: Env): "live" | "fixture" {
+  const mode = omkarMode(env);
+  if (mode === "unavailable") {
+    throw new HttpError(503, "生产环境没有可用的 Omkar 密钥，已拒绝示例价格");
+  }
+  return mode;
 }
 
 export function sourceCopy(live: boolean): { sourceLabel: string; priceNote: string } {
@@ -121,11 +141,12 @@ export async function omkarRequest(
   operation: "search" | "details",
   query: string,
 ): Promise<{ status: number; body: unknown; live: boolean }> {
-  if (omkarMode(env) === "fixture") {
+  const mode = assertOmkarReady(env);
+  if (mode === "fixture") {
     const fixture = fixtureBody(operation, query);
     return { ...fixture, live: false };
   }
-  const key = (env.OMKAR_API_KEY ?? env.RAPIDAPI_KEY ?? "").trim();
+  const key = omkarKey(env);
   const url = new URL(`https://${HOST}${operation === "search" ? "/products/search" : "/products/details"}`);
   url.searchParams.set("store", COLES_MARRICKVILLE_STORE_ID);
   if (operation === "search") {
