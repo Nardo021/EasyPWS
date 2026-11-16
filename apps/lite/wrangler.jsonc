@@ -46,8 +46,8 @@
         {
           "binding": "DB",
           "database_name": "easypws",
-          // Placeholder only. Replace with the id from an approved `wrangler d1 create easypws`.
-          "database_id": "00000000-0000-4000-8000-0000000000d1",
+          // Cloudflare remote D1 created on 2026-11-16. Remote migrations pending.
+          "database_id": "cf8c92cf-939f-4535-b47b-95e687a8a99a",
           "migrations_dir": "migrations"
         }
       ]
