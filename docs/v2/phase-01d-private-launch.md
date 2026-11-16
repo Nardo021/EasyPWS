@@ -7,6 +7,17 @@
 
 No remote Worker, D1, DNS, Access, or Cron change was made. `PRIVATE_DEPLOYED` is not claimed. Phase 0 remains `PHASE_0_PARTIAL` / `PROVIDER_GATE_PARTIAL`.
 
+## Deployment continuation — 2026-11-17
+
+**Current status: `APP_DEPLOYED / OWNER_SESSION_BLOCKED`. This is not `PRIVATE_DEPLOYED`.** The real Worker is uploaded. Signed-out Access checks passed. The owner browser session is not complete, so `easypws.yanze.me` still points at the Home tunnel.
+
+- Confirmed `wrangler d1 migrations list DB --env production --remote`: no pending migrations. SQL was not applied again.
+- Production auth validates the Access JWT. A forged email header or invalid token does not authorize.
+- Secret `OMKAR_API_KEY` is present on Worker `easypws`. Its value was not printed.
+- Deployed version `91774a55-591b-4375-951f-aa4daf6e5560`: static assets, D1 `easypws`, `EASYPWS_RUNTIME=production`, no routes, no Cron, preview URLs off.
+- Temporary `workers.dev` hostname is enabled only for the Access test. Signed-out `/`, `/api/v1/health`, `/api/v1/auth/me`, and search return HTTP 302 to Cloudflare Access, including a forged email header and fake JWT. No application data was returned. Live Omkar calls: 0.
+- Owner login is waiting on Cloudflare Access (one-time PIN or Authentik). DNS cutover stays blocked until that session can search, save, import, and refresh.
+
 ## Deployment continuation — 2026-11-16 (verified remote state)
 
 **Current status: `REMOTE_D1_MIGRATED / APP_NOT_DEPLOYED`. This supersedes the older preparation-only snapshot below. The owner approved the private infrastructure and DNS cutover only after successful security verification.**
