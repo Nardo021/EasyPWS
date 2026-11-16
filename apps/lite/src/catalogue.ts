@@ -14,6 +14,8 @@ export interface Env {
   RAPIDAPI_KEY?: string;
   EASYPWS_OMKAR_MODE?: string;
   EASYPWS_RUNTIME?: string;
+  /** Local production-guard only. Ignored unless the request host is loopback. */
+  EASYPWS_ACCESS_TEST_JWK?: string;
 }
 
 const HOST = "best-coles-scraper-free-1000-calls.p.rapidapi.com";

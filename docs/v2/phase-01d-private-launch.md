@@ -18,6 +18,10 @@ No remote Worker, D1, DNS, Access, or Cron change was made. `PRIVATE_DEPLOYED` i
 - Existing `easypws.yanze.me` DNS still points to the Home tunnel. **Do not replace it yet.** No remote Cron, notification, or Omkar API use.
 - CI for previous configuration commit `28188bda073ca88c2e93804db91ffce7876adea5`: both push and PR workflows succeeded.
 
+### Authentication boundary — 2026-11-17
+
+Production no longer accepts `Cf-Access-Authenticated-User-Email` by itself. With Static Assets, `ctx.access` is not passed to the user Worker, so the Worker validates `Cf-Access-Jwt-Assertion` (or the `CF_Authorization` cookie) for issuer `https://leo728.cloudflareaccess.com`, audience `e4b280e1e4796c7a896a29737dd5817f26ba6128f9dccac0c9744dffa72ad3f9`, RS256 signature, expiry, and the owner email. A forged header, `alg: none`, or a token signed by another key returns HTTP 401 and no fixture price. `wrangler d1 migrations list DB --env production --remote` reported no pending migrations; the SQL was not applied again.
+
 ### Remaining required actions (use the developer's local checkout and secure credential input)
 
 1. First run `pnpm --filter @easypws/lite exec wrangler d1 migrations list DB --env production --remote` and confirm **no pending migrations**. The remote D1 migration records have already been inserted; **do not reapply the SQL manually**.

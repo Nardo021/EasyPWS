@@ -7,6 +7,7 @@
   "preview_urls": false,
   // No triggers.crons. Remote Cron stays off until a separate activation approval.
   // easypws.yanze.me currently points at the Home tunnel. Do not add that route here.
+  // Production auth validates the Access JWT. Do not trust Cf-Access-Authenticated-User-Email.
   "observability": {
     "enabled": true,
     "traces": {
