@@ -46,7 +46,7 @@
         {
           "binding": "DB",
           "database_name": "easypws",
-          // Cloudflare remote D1 created on 2026-11-16. Remote migrations pending.
+          // Remote D1 created 2026-11-16; 0001 and 0002 applied via D1 API and recorded in d1_migrations.
           "database_id": "cf8c92cf-939f-4535-b47b-95e687a8a99a",
           "migrations_dir": "migrations"
         }
