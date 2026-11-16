@@ -1,8 +1,10 @@
+import { AccessError, requireOwner } from "./access.js";
 import { parseColesProductId } from "@easypws/adapters/omkar";
 import {
   HttpError,
   detailsReported,
   externalRequestCount,
+  isProduction,
   omkarMode,
   searchReported,
   sourceCopy,
@@ -52,18 +54,19 @@ function itemId(pathname: string, suffix: string): string | null {
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 
-async function route(request: Request, env: Env, url: URL): Promise<Response> {
+async function route(request: Request, env: Env, url: URL, owner: string | null): Promise<Response> {
   const path = url.pathname;
   const method = request.method;
-  const live = omkarMode(env) === "live";
+  const dataMode = omkarMode(env);
+  const live = dataMode === "live";
   const copy = sourceCopy(live);
 
   if (method === "GET" && path === "/api/v1/health") {
     const usage = await monitorUsage(env);
     return json({
-      ok: true,
-      runtime: "workerd-local",
-      mode: live ? "live" : "fixture",
+      ok: dataMode !== "unavailable",
+      runtime: isProduction(env) ? "production" : "workerd-local",
+      mode: dataMode,
       storeId: COLES_MARRICKVILLE_STORE_ID,
       externalRequests: await externalRequestCount(env),
       monitorBudget: usage.budget,
@@ -72,6 +75,21 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
   }
 
   if (method === "GET" && path === "/api/v1/auth/me") {
+    if (isProduction(env)) {
+      if (!owner) {
+        throw new HttpError(401, "需要 Cloudflare Access 登录");
+      }
+      return json({
+        email: owner,
+        scopes: ["private"],
+        mode: "private",
+        sourceLabel: dataMode === "unavailable" ? "Omkar Hosted API" : copy.sourceLabel,
+        storeId: COLES_MARRICKVILLE_STORE_ID,
+        storeName: STORE_NAME,
+        priceNote: dataMode === "unavailable" ? "生产环境没有可用的 Omkar 密钥，已拒绝示例价格" : copy.priceNote,
+        liveApi: live,
+      });
+    }
     return json({
       email: "local",
       scopes: ["local"],
@@ -187,13 +205,24 @@ async function route(request: Request, env: Env, url: URL): Promise<Response> {
 }
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
+    let owner: string | null = null;
+    if (isProduction(env)) {
+      try {
+        owner = await requireOwner(request, env, ctx);
+      } catch (error) {
+        if (error instanceof AccessError) {
+          return json({ message: error.message }, 401);
+        }
+        return json({ message: "需要 Cloudflare Access 登录" }, 401);
+      }
+    }
     if (!url.pathname.startsWith("/api/")) {
       return env.ASSETS.fetch(request);
     }
     try {
-      return await route(request, env, url);
+      return await route(request, env, url, owner);
     } catch (error) {
       if (error instanceof HttpError) {
         return json({ message: error.message }, error.status);
