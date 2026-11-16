@@ -7,7 +7,28 @@
 
 No remote Worker, D1, DNS, Access, or Cron change was made. `PRIVATE_DEPLOYED` is not claimed. Phase 0 remains `PHASE_0_PARTIAL` / `PROVIDER_GATE_PARTIAL`.
 
-## Read-only Cloudflare check
+## Deployment continuation — 2026-11-16 (verified remote state)
+
+**Current status: `REMOTE_D1_MIGRATED / APP_NOT_DEPLOYED`. This supersedes the older preparation-only snapshot below. The owner approved the private infrastructure and DNS cutover only after successful security verification.**
+
+- Created remote D1 `easypws`: `cf8c92cf-939f-4535-b47b-95e687a8a99a`.
+- Applied the exact existing `0001_watch.sql` and `0002_monitor.sql` to **remote** D1 through the Cloudflare D1 API (not through the local Wrangler CLI). Created Wrangler-compatible `d1_migrations` tracking records for both files. Verified all six business/migration tables and `last_attempt_at`; watchlist and alerts are empty.
+- Created Worker `easypws` with only a **503 placeholder**, no static assets, no public routes, `workers.dev` disabled and preview URLs disabled.
+- Created Worker-wide `EasyPWS Private Worker` Access application, allowing only the owner. **Remote browser and request authentication are not yet verified.**
+- Existing `easypws.yanze.me` DNS still points to the Home tunnel. **Do not replace it yet.** No remote Cron, notification, or Omkar API use.
+- CI for previous configuration commit `28188bda073ca88c2e93804db91ffce7876adea5`: both push and PR workflows succeeded.
+
+### Remaining required actions (use the developer's local checkout and secure credential input)
+
+1. First run `pnpm --filter @easypws/lite exec wrangler d1 migrations list DB --env production --remote` and confirm **no pending migrations**. The remote D1 migration records have already been inserted; **do not reapply the SQL manually**.
+2. Resolve the header-only production authentication check: a user-supplied `Cf-Access-Authenticated-User-Email` header is not independent proof of Access authorization. Prefer validated Access JWT claims for this static-assets Worker (Cloudflare documents that `ctx.access` can be unavailable with Static Assets). Verify a forged email header and invalid/missing JWT cannot authorize any page or API. Keep the existing Worker-wide Access policy.
+3. From this branch, build Next.js static assets and use the project's Wrangler. Securely provision `OMKAR_API_KEY` for the **production** environment before full deployment; never commit or print its value. `secrets.required` makes Wrangler reject a deploy without it. The remote Worker is currently the harmless 503 placeholder; a secret update may deploy a new version, but there is still no public route.
+4. Deploy the actual `easypws` Worker with Workers Static Assets and remote D1, keeping `workers_dev=false`, preview URLs off, routes/domains unset and Cron disabled. Confirm the new Worker has assets and `DB` binding; do not treat the existing 503 stub as the real application.
+5. After checking the Worker-wide Access configuration, use a **temporary Access-protected** hostname only for a tightly bounded authorized/signed-out verification if necessary. Verify signed-out webpage/API denied; authorized session works; remote D1 persists Watchlist, and at most two real Omkar calls succeed for store 4166. Disable the temporary hostname afterwards unless it is deliberately protected.
+6. **Only after all checks pass**, replace the existing Home-tunnel DNS record for `easypws.yanze.me` with the Worker custom domain. Preserve the tunnel and all other hostnames. Verify old DNS target is gone and final hostname is protected.
+7. Leave remote Cron, push, PR merges and unrelated projects untouched. Keep `PHASE_0_PARTIAL` and `PROVIDER_GATE_PARTIAL` until independently resolved.
+
+## Read-only Cloudflare check (2026-11-13 historical snapshot)
 
 Account `Leo`. Zone `yanze.me` is active. No Worker or D1 is named EasyPWS. Existing Workers and databases were left untouched.
 
