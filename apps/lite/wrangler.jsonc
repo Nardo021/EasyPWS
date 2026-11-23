@@ -5,7 +5,7 @@
   "compatibility_date": "2026-11-12",
   "workers_dev": false,
   "preview_urls": false,
-  // No triggers.crons. Remote Cron stays off until a separate activation approval.
+  // Local Worker has no Cron. Production has one daily trigger (UTC).
   // easypws.yanze.me is an existing Worker Custom Domain managed in Cloudflare. Do not alter routes/DNS here.
   // Production auth validates the Access JWT. Do not trust Cf-Access-Authenticated-User-Email.
   "observability": {
@@ -30,6 +30,9 @@
   "env": {
     "production": {
       "name": "easypws",
+      "triggers": {
+        "crons": ["0 22 * * *"]
+      },
       "workers_dev": false,
       "preview_urls": false,
       "assets": {
