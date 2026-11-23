@@ -5,16 +5,18 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": {
+    "exports": {
     ".": {
+      "easypws-source": "./src/index.ts",
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"lint placeholder\"",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
+    "lint": "node ../../scripts/workspace.mjs lint",
     "test": "vitest run"
   },
   "dependencies": {

@@ -8,18 +8,23 @@
     "node": ">=22.5"
   },
   "scripts": {
-    "build": "pnpm -r --filter './packages/**' run build && pnpm --filter @easypws/web build && pnpm --filter @easypws/api build",
+    "build": "node scripts/workspace.mjs build",
     "dev": "pnpm --filter @easypws/api dev",
     "dev:api": "pnpm --filter @easypws/api dev",
     "dev:web": "pnpm --filter @easypws/web dev",
     "start": "pnpm --filter @easypws/api start",
-    "lint": "pnpm -r run lint",
-    "typecheck": "pnpm -r run typecheck",
-    "test": "pnpm --filter @easypws/adapters test && pnpm --filter @easypws/rules test && pnpm --filter @easypws/database test && pnpm --filter @easypws/services test",
+    "lint": "node scripts/workspace.mjs lint",
+    "typecheck": "node scripts/workspace.mjs typecheck",
+    "test": "node scripts/workspace.mjs test",
     "db:migrate": "pnpm --filter @easypws/database migrate"
   },
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "typescript-eslint": "^8.72.2"
+  }
 }
