@@ -69,6 +69,23 @@ export interface WatchlistItem {
   targetPrice?: number;
   lastCheckedAt?: string;
   imageUrl?: string;
+  sourceLabel?: string;
+  storeId?: string;
+  storeName?: string;
+  priceNote?: string;
+  availabilityLabel?: string;
+  notificationEligible?: false;
+}
+
+export interface LocalSession {
+  email: string;
+  scopes: string[];
+  mode?: "local";
+  sourceLabel?: string;
+  storeId?: string;
+  storeName?: string;
+  priceNote?: string;
+  liveApi?: boolean;
 }
 
 export interface PricePoint {
@@ -90,7 +107,7 @@ export interface SearchResult {
 }
 
 export const easypwsApi = {
-  me: () => api<{ email: string; scopes: string[] }>("/auth/me"),
+  me: () => api<LocalSession>("/auth/me"),
   listWatchlist: () => api<{ items: WatchlistItem[] }>("/watchlists/items"),
   importProduct: (url: string, targetPrice?: number) =>
     api("/products/import", {

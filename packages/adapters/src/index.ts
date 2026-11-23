@@ -31,6 +31,14 @@ export {
   type NormalizedProviderQuote,
 } from "./provider/normalize.js";
 export {
+  COLES_MARRICKVILLE_STORE_ID,
+  mapOmkarProduct,
+  omkarProductRows,
+  parseColesProductId,
+  type MapOmkarResult,
+  type MappedOmkarProduct,
+} from "./provider/omkar-map.js";
+export {
   ManualClock,
   ProviderRouter,
   systemRouterClock,
