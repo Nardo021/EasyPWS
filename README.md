@@ -4,7 +4,7 @@
 
 **Verified private release: 2026-11-23.** The current single-user app is deployed at [easypws.yanze.me](https://easypws.yanze.me), protected by owner-only Cloudflare Access. It uses one Cloudflare Worker (Static Assets + API), D1, and Omkar Hosted API. The previous Home Tunnel route has been retired **for this hostname only**. The temporary `workers.dev` route and previews are disabled.
 
-V2 currently supports Coles Marrickville (store `4166`), product search, Coles URL import, watchlist, target prices, manual refresh, and price history. **Prices are third-party API reports, not independently verified Coles store prices.** Automatic checking logic and D1 price-change events are implemented, but **production Cron is not enabled** and no push notifications are sent. `PHASE_0_PARTIAL` and `PROVIDER_GATE_PARTIAL` remain in force.
+V2 currently supports Coles Marrickville (store `4166`), product search, Coles URL import, watchlist, target prices, manual refresh, and price history. **Prices are third-party API reports, not independently verified Coles store prices.** Automatic checking logic and D1 price-change events are implemented. **Production Cron is configured once daily at 22:00 UTC (09:00 AEDT / 08:00 AEST); first real automatic price-check acceptance is pending because the current production watchlist is empty.** No push notifications are sent. `PHASE_0_PARTIAL` and `PROVIDER_GATE_PARTIAL` remain in force.
 
 ### V2 local checks
 
@@ -19,7 +19,7 @@ pnpm --filter @easypws/lite check:monitor
 pnpm --filter @easypws/lite check:production
 ```
 
-See [V2 private deployment record](docs/v2/phase-01d-private-launch.md), [V2 phase sequence](docs/v2/phase-01c-auto-monitor.md), and the [current roadmap](docs/roadmap.md). Production secrets are never committed; a successful local build does not authorize redeploy, DNS changes, or Cron activation.
+See [V2 private deployment record](docs/v2/phase-01d-private-launch.md), [V2 production Cron status](docs/v2/phase-01e-daily-cron.md), and the [current roadmap](docs/roadmap.md). Production secrets are never committed; a successful local build does not authorize redeploy, DNS changes, or Cron activation.
 
 ---
 
