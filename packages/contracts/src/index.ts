@@ -7,5 +7,6 @@ export * from "./rules.js";
 export * from "./notifications.js";
 export * from "./jobs.js";
 export * from "./adapters.js";
+export * from "./providers.js";
 export * from "./auth.js";
 export * from "./api.js";
