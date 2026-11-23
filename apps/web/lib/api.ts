@@ -75,6 +75,8 @@ export interface WatchlistItem {
   priceNote?: string;
   availabilityLabel?: string;
   notificationEligible?: false;
+  alertCount?: number;
+  alerts?: string[];
 }
 
 export interface LocalSession {

@@ -1,6 +1,7 @@
 import type { MappedOmkarProduct } from "@easypws/adapters/omkar";
 import { COLES_MARRICKVILLE_STORE_ID } from "@easypws/adapters/omkar";
 import { STORE_NAME, type Env } from "./catalogue.js";
+import { alertText } from "./monitor.js";
 
 export interface WatchItem {
   watchlistItemId: string;
@@ -24,6 +25,8 @@ export interface WatchItem {
   priceNote: string;
   availabilityLabel: string;
   notificationEligible: false;
+  alertCount: number;
+  alerts?: string[];
 }
 
 interface ProductRow {
@@ -64,10 +67,27 @@ async function historicalLow(env: Env, productId: string): Promise<number | unde
   return optionalNumber(row?.low ?? null);
 }
 
+async function alertsFor(env: Env, productId: string): Promise<{ count: number; alerts: string[] }> {
+  const countRow = await env.DB.prepare("SELECT COUNT(*) AS n FROM alert_events WHERE product_id = ?")
+    .bind(productId)
+    .first<{ n: number }>();
+  const rows = await env.DB.prepare(
+    `SELECT kind, previous_price, price, target_price
+     FROM alert_events WHERE product_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 3`,
+  )
+    .bind(productId)
+    .all<{ kind: string; previous_price: number | null; price: number; target_price: number | null }>();
+  return {
+    count: countRow?.n ?? 0,
+    alerts: rows.results.map((alert) => alertText(alert.kind, alert.previous_price, alert.price, alert.target_price)),
+  };
+}
+
 export async function toWatchItem(env: Env, row: ProductRow): Promise<WatchItem> {
   const current = optionalNumber(row.current_price);
   const regular = optionalNumber(row.regular_price);
   const low = await historicalLow(env, row.id);
+  const alerts = await alertsFor(env, row.id);
   return {
     watchlistItemId: row.id,
     listingId: row.id,
@@ -93,6 +113,8 @@ export async function toWatchItem(env: Env, row: ProductRow): Promise<WatchItem>
     availabilityLabel:
       row.availability_known === 1 ? (row.in_stock === 1 ? "有货" : "无货") : "库存未返回",
     notificationEligible: false,
+    alertCount: alerts.count,
+    ...(alerts.alerts.length > 0 ? { alerts: alerts.alerts } : {}),
   };
 }
 
@@ -193,6 +215,7 @@ export async function removeItem(env: Env, id: string): Promise<boolean> {
     return false;
   }
   await env.DB.prepare("DELETE FROM price_observations WHERE product_id = ?").bind(id).run();
+  await env.DB.prepare("DELETE FROM alert_events WHERE product_id = ?").bind(id).run();
   await env.DB.prepare("DELETE FROM watched_products WHERE id = ?").bind(id).run();
   return true;
 }

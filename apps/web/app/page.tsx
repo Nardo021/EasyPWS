@@ -349,6 +349,12 @@ export default function HomePage() {
                     ? `上次获取 ${new Date(item.lastCheckedAt).toLocaleString("zh-CN")}`
                     : "尚未获取"}
                   <br />
+                  {item.alerts?.[0] ? (
+                    <>
+                      {item.alerts[0]}
+                      <br />
+                    </>
+                  ) : null}
                   {item.priceNote ? (
                     <>
                       {item.priceNote}
