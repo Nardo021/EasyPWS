@@ -28,3 +28,11 @@
 5. To disable the trigger, set the schedules API to `[]` and change Wrangler `env.production.triggers.crons` back to `[]` in source to prevent an accidental reactivation on redeploy.
 
 **Out of scope:** push/email notifications, a separate scheduling service, new providers, data migrations, Git branch cleanup, changing production login or public routes.
+
+## Remote activation evidence — 2026-11-23
+
+**Status: `CRON_CONFIGURED / LIVE_CHECK_PENDING`.** Owner authorized Phase 1E-B by requesting the next step. [PR #8](https://github.com/Nardo021/EasyPWS/pull/8) was merged on `main` at `9ad9fdf3d75fe0c60da06d0d895a986a3300b8e2` after both Push CI and PR CI succeeded. The merge commit also passed [`main` Push CI #45167271907](https://github.com/Nardo021/EasyPWS/actions/runs/45167271907), all four Ubuntu/Windows jobs success.
+
+Cloudflare API **PUT** to the existing `easypws` Worker schedules configured exactly one `0 22 * * *` cron. Immediate GET confirmed it was saved with created_on `2026-11-23T11:42:33.288865Z`. Existing production Worker deployed version `91774a55-591b-4375-951f-aa4daf6e5560` was unchanged; `workers.dev` and previews remained disabled; owner-only Access and custom domain were intact before activation. No new worker deployment, migration, new secret, watchlist modification, manual Omkar request, push notification or new provider.
+
+The actual D1 watchlist contained **zero rows**, so **no production scheduled Omkar call has been executed or verified** yet. The configured schedule alone is not proof of automatic price collection. After propagation and the next scheduled invocation, inspect Worker scheduled metrics; once the owner adds a genuine active watched product, verify a bounded `monitor_attempts` write, its outcome and last valid price preservation. Historical `PHASE_0_PARTIAL / PROVIDER_GATE_PARTIAL` remain unchanged.
