@@ -5,7 +5,9 @@
   "compatibility_date": "2026-11-12",
   "workers_dev": false,
   "preview_urls": false,
-  // No triggers.crons in this phase. scheduled() is local-only until a later deploy.
+  // No triggers.crons. Remote Cron stays off until a separate activation approval.
+  // easypws.yanze.me is an existing Worker Custom Domain managed in Cloudflare. Do not alter routes/DNS here.
+  // Production auth validates the Access JWT. Do not trust Cf-Access-Authenticated-User-Email.
   "observability": {
     "enabled": true,
     "traces": {
@@ -15,7 +17,7 @@
   "assets": {
     "directory": "../web/out",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": true
   },
   "d1_databases": [
     {
@@ -24,5 +26,32 @@
       "database_id": "00000000-0000-0000-0000-000000000001",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  "env": {
+    "production": {
+      "name": "easypws",
+      "workers_dev": false,
+      "preview_urls": false,
+      "assets": {
+        "directory": "../web/out",
+        "binding": "ASSETS",
+        "run_worker_first": true
+      },
+      "vars": {
+        "EASYPWS_RUNTIME": "production"
+      },
+      "secrets": {
+        "required": ["OMKAR_API_KEY"]
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "easypws",
+          // Remote D1 created 2026-11-16; 0001 and 0002 applied via D1 API and recorded in d1_migrations.
+          "database_id": "cf8c92cf-939f-4535-b47b-95e687a8a99a",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
 }

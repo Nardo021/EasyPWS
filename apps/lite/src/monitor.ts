@@ -1,5 +1,5 @@
 import type { MappedOmkarProduct } from "@easypws/adapters/omkar";
-import { detailsReported, sourceCopy, type Env } from "./catalogue.js";
+import { detailsReported, omkarMode, sourceCopy, type Env } from "./catalogue.js";
 
 export const DAILY_MONITOR_BUDGET = 15;
 
@@ -136,6 +136,9 @@ async function applyReport(
 }
 
 export async function runMonitor(env: Env, now = new Date()): Promise<{ checked: number; updated: number; preserved: number }> {
+  if (omkarMode(env) === "unavailable") {
+    return { checked: 0, updated: 0, preserved: 0 };
+  }
   const day = sydneyDay(now);
   const usage = await monitorUsage(env, now);
   const remaining = Math.max(0, usage.budget - usage.usedToday);

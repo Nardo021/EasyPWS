@@ -1,4 +1,32 @@
-# Roadmap
+# EasyPWS Roadmap
+
+## Active roadmap — V2 Lite (calibrated 2026-11-23)
+
+EasyPWS V2 is a **private, owner-only Coles price watcher**. Keep the Worker + D1 + Cloudflare Access architecture small; do not turn the former multi-retailer/HA roadmap into requirements for V2.
+
+| Stage | Verified status | Next acceptance condition |
+| --- | --- | --- |
+| Phase 0 / Provider evidence | PARTIAL | Third-party quote cannot be described as independently verified Coles store price |
+| Phase 1A Provider foundation | Offline code and CI passed | Keep existing interface; no expansion without need |
+| Phase 1B Watchlist | Delivered in private V2 | Search, URL import, manual refresh, price history |
+| Phase 1C Monitor handler | Local tests passed | Production Cron still disabled |
+| Phase 1D Private Cloudflare release | PRIVATE_DEPLOYED (owner confirmed 2026-11-23) | Owner-only Access, D1, real Static Assets, custom domain, disabled workers.dev |
+| **Phase 1E-A Git baseline** | **In progress (2026-11-23)** | Merge reviewed stacked PR #3–#7 into `main`, verify CI; no production redeploy |
+| **Phase 1E-B Automatic checks** | **Proposed / NOT enabled** | Separate approval, one daily Cron, bounded API budget, real monitor attempt verified |
+| Phase 1F Notification MVP | Proposed | Owner-approved channel and explicit API-reported-price wording, no repeated spam |
+| Phase 2A Mobile PWA | Proposed | Mobile usability, install manifest/icons; don't claim installable PWA before validation |
+| Phase 2B Watchlist-first specials | Proposed | Useful watched-product deals, no indiscriminate full-catalog scrape |
+| Phase 3 Other stores/providers | Deferred | Real need, quota/cost check, evidence before expansion |
+
+**Current operational facts:** `easypws.yanze.me` is private and deployed. Production Cron and push notifications are **off**. The source of truth for code is GitHub; the latest production Worker was deployed from source commit `96dc7c47001120d5dd7eaa8262dca100beada7ca`, with only a later deployment-note commit on the Phase 1D PR at the time of this calibration. `main` integration is a repository operation, not automatic deployment. The old Node/LXC/Home Assistant code remains in this repository, but does not power the V2 Worker.
+
+**Constraints:** one user; Coles store 4166; Omkar API-reported price only; no unverified "official" specials; 15 automatic checks per Australia/Sydney day in current handler; manual API requests also consume provider quota. No multitenant auth, queues, whole-site specials scraping, new provider integrations or remote Cron changes without a specific need and approval.
+
+Links: [Phase 1D history](v2/phase-01d-private-launch.md), [Phase 1C checks](v2/phase-01c-auto-monitor.md), [Provider gate](v2/phase-00-results.md).
+
+---
+
+## Legacy V1 Roadmap (historical, not V2 commitments)
 
 ## Done
 
