@@ -7,6 +7,14 @@
 
 No remote Worker, D1, DNS, Access, or Cron change was made. `PRIVATE_DEPLOYED` is not claimed. Phase 0 remains `PHASE_0_PARTIAL` / `PROVIDER_GATE_PARTIAL`.
 
+## Current final status — 2026-11-23
+
+**`PRIVATE_DEPLOYED` (owner accepted):** `https://easypws.yanze.me` serves the actual Lite Worker, protected by owner-only Cloudflare Access. Cloudflare API read-back confirmed the attached custom domain, active TLS certificate, D1 and Static Assets bindings, and `OMKAR_API_KEY` secret binding. Deployment version: `91774a55-591b-4375-951f-aa4daf6e5560` (source code commit `96dc7c47001120d5dd7eaa8262dca100beada7ca`). The owner's signed-in browser acceptance is reported in [PR #7 evidence](https://github.com/Nardo021/EasyPWS/pull/7#issuecomment-7098984557).
+
+Temporary `workers.dev` and previews are now disabled. Cloudflare Cron schedules are **empty** and push notifications are off. No deploy or DNS change is implied by merging these source files into `main`. Phase 0 and Provider evidence remain **PARTIAL**. All older status blocks in this document are **dated historical records**, not the current state.
+
+---
+
 ## Deployment continuation — 2026-11-17
 
 **Current status: `APP_DEPLOYED / OWNER_SESSION_BLOCKED`. This is not `PRIVATE_DEPLOYED`.** The real Worker is uploaded. Signed-out Access checks passed. The owner browser session is not complete, so `easypws.yanze.me` still points at the Home tunnel.
