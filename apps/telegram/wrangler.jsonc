@@ -5,7 +5,7 @@
   "compatibility_date": "2026-11-24",
   "workers_dev": false,
   "preview_urls": false,
-  // NO production environment or public route yet. Fail closed until BotFather owner setup.
+  // Production config is staged in Draft PR #9; do not deploy until owner credentials and activation gates are met.
   // This is an independent small database, NOT the existing EasyPWS price D1.
   "d1_databases": [
     {
@@ -22,5 +22,31 @@
       "TELEGRAM_OWNER_USER_ID",
       "TELEGRAM_OWNER_CHAT_ID"
     ]
+  },
+  "env": {
+    "production": {
+      "name": "easypws-telegram",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        { "pattern": "easypws-telegram.yanze.me", "custom_domain": true }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "easypws-telegram",
+          "database_id": "cfbdf028-958b-49d8-856f-cc4beadcb0ea",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "secrets": {
+        "required": [
+          "TELEGRAM_BOT_TOKEN",
+          "TELEGRAM_WEBHOOK_SECRET",
+          "TELEGRAM_OWNER_USER_ID",
+          "TELEGRAM_OWNER_CHAT_ID"
+        ]
+      }
+    }
   }
 }
