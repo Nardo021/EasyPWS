@@ -17,13 +17,14 @@ const LIBRARY_PACKAGES = [
   "@easypws/services",
 ];
 
-const APP_PACKAGES = ["@easypws/api", "@easypws/web", "@easypws/lite"];
+const APP_PACKAGES = ["@easypws/api", "@easypws/web", "@easypws/lite", "@easypws/telegram"];
 
 const TEST_PACKAGES = [
   "@easypws/adapters",
   "@easypws/rules",
   "@easypws/database",
   "@easypws/services",
+  "@easypws/telegram",
 ];
 
 const LIBRARY_FILTER = "./packages/*";
