@@ -1,6 +1,6 @@
 # EasyPWS V2 — Phase 1F-A Telegram private webhook foundation
 
-**Status:** CODE_ONLY / CI_PENDING / NOT_DEPLOYED  
+**Status:** BOT_REPORTED_CREATED / ISOLATED_D1_READY / OWNER_BINDING_PENDING / NOT_DEPLOYED  
 **Date:** 2026-11-24 (Australia/Sydney)  
 **Source branch:** `easypws-v2/phase-01f-a-telegram-foundation`, based on `main` `bed46f4571ee331ce11fb8101f0d1d4bd41e8cc6`.
 
@@ -26,7 +26,7 @@ Add a narrowly scoped **single-owner Telegram webhook** without weakening the ex
 - `apps/telegram/src/index.ts` — small, dependency-injectable Worker handler.
 - `apps/telegram/src/index.test.ts` — 14 offline Node tests (valid owner, invalid secret, spoofed user/chat, group, duplicate update, failure and config fail-closed).
 - `apps/telegram/migrations/0001_webhook_receipts.sql` — isolated tiny D1 schema, **not applied to production yet**.
-- `apps/telegram/wrangler.jsonc` — deliberately **local-only**, disabled workers.dev/preview with a local-placeholder D1 ID. There is **no production environment, custom domain or public webhook yet**.
+- `apps/telegram/wrangler.jsonc` — local placeholder plus staged production environment, disabled workers.dev/preview, with the separate D1 and dedicated hostname. Configuration alone does **not** activate a Worker or public webhook.
 - `scripts/workspace.mjs` and `pnpm-lock.yaml` — register the app in full CI typechecking and testing, with existing dependency versions.
 
 CI acceptance is required on Ubuntu **and** Windows: fresh install with frozen lockfile, build, typecheck, all tests and lint. Never label production connectivity PASS from these offline tests.
@@ -52,3 +52,11 @@ CI acceptance is required on Ubuntu **and** Windows: fresh install with frozen l
 - Current EasyPWS `PRIVATE_DEPLOYED` / `AUTO_MONITOR_VERIFIED` (first run) / `PHASE_0_PARTIAL` / `PROVIDER_GATE_PARTIAL` are unchanged.
 
 **Next gate:** GitHub Draft PR CI, then owner's BotFather setup and separate D1 + Webhook deployment after secure configuration. The bot is not live as a result of this source-only phase.
+
+## Owner bootstrap continuation — 2026-11-24
+
+The owner reported creating [@leo728_easypws_bot](https://t.me/leo728_easypws_bot). Token and numeric identity have **not** yet been verified. Cloudflare D1 `easypws-telegram` was independently created and verified with UUID `cfbdf028-958b-49d8-856f-cc4beadcb0ea`. The exact `0001_webhook_receipts.sql` migration was applied to this isolated database, recorded in `d1_migrations`, and read back with zero receipts. No write to the existing EasyPWS price database.
+
+Production Wrangler configuration now stages `easypws-telegram` with that isolated D1, the dedicated custom domain `easypws-telegram.yanze.me`, disabled workers.dev and previews, and required secret names (no actual secrets). Cloudflare DNS and Access inventory showed no existing matching hostname or Access application at the time of review. **No Worker deployment, domain attachment, webhook or secret was created.** Recheck ownership and route collisions at activation.
+
+Owner binding must use a one-time random challenge sent from the owner's private chat to the intended bot. Validate `getMe` username, check `getWebhookInfo` has no active webhook, then inspect `getUpdates` only locally for the exact random challenge with matching positive numeric user/chat IDs. Do not bind to the first message in the queue or share the token or other credentials. Keep the verified IDs locally for encrypted-secret configuration. Next gates: updated Draft PR CI, owner-bound secrets, separate deployment approval, webhook registration and real owner/negative tests. No changes to original daily price monitor.
