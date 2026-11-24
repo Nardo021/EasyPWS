@@ -31,6 +31,10 @@ function json(status: number): Response {
   });
 }
 
+function isSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value);
+}
+
 function validTelegramId(value: string | undefined): value is string {
   return typeof value === "string" && /^[1-9][0-9]{0,15}$/.test(value)
     && Number.isSafeInteger(Number(value));
@@ -96,7 +100,7 @@ async function readBoundedBody(request: Request): Promise<string | null> {
 function authorizedMessage(update: JsonObject, env: TelegramEnv): { id: number; chatId: string; command: string } | null {
   const id = update["update_id"];
   const message = update["message"];
-  if (!Number.isSafeInteger(id) || typeof id !== "number" || id < 0 || !isObject(message)) {
+  if (!isSafeInteger(id) || id < 0 || !isObject(message)) {
     return null;
   }
   const from = message["from"];
@@ -104,7 +108,7 @@ function authorizedMessage(update: JsonObject, env: TelegramEnv): { id: number; 
   if (!isObject(from) || !isObject(chat) || chat["type"] !== "private") {
     return null;
   }
-  if (!Number.isSafeInteger(from["id"]) || !Number.isSafeInteger(chat["id"])
+  if (!isSafeInteger(from["id"]) || !isSafeInteger(chat["id"])
     || String(from["id"]) !== env.TELEGRAM_OWNER_USER_ID
     || String(chat["id"]) !== env.TELEGRAM_OWNER_CHAT_ID) {
     return null;
