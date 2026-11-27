@@ -1,0 +1,15 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { handleSetup } from "./setup.mjs";
+const S="a".repeat(64), U="https://easypws-telegram.yanze.me/__setup", W="https://easypws-telegram.yanze.me/webhook";
+const env={TELEGRAM_BOT_TOKEN:"123456:FAKE_TEST_TOKEN_1234567890",TELEGRAM_WEBHOOK_SECRET:S,TELEGRAM_OWNER_USER_ID:"123456",TELEGRAM_OWNER_CHAT_ID:"123456",DB:{prepare(){return {first:async()=>({n:0})}}}};
+const request=(secret=S,url=U,method="POST")=>new Request(url,{method,headers:{"X-EasyPWS-Setup-Secret":secret}});
+function mock(existing="",username="leo728_easypws_bot"){const calls=[];let registered=existing;return {calls,send:async(url,init)=>{const method=url.split("/").at(-1);const body=JSON.parse(init.body);calls.push({method,body});let result;if(method==="getMe")result={is_bot:true,username};else if(method==="getWebhookInfo")result={url:registered};else if(method==="setWebhook"){registered=body.url;result=true;}else throw Error("unexpected");return Response.json({ok:true,result});}}}
+test("setup refuses invalid secret without upstream requests",async()=>{const m=mock();assert.equal((await handleSetup(request("wrong"),env,m.send)).status,403);assert.equal(m.calls.length,0)});
+test("setup refuses other path, method, host and query",async()=>{const m=mock();for(const r of [request(S,U,"GET"),request(S,U+"?x=1"),request(S,"https://example.com/__setup")])assert.equal((await handleSetup(r,env,m.send)).status,404);assert.equal(m.calls.length,0)});
+test("setup refuses mismatched owner IDs",async()=>{const m=mock();assert.equal((await handleSetup(request(),{...env,TELEGRAM_OWNER_CHAT_ID:"123457"},m.send)).status,503);assert.equal(m.calls.length,0)});
+test("setup verifies exact Bot identity",async()=>{const m=mock("","other_bot");assert.equal((await handleSetup(request(),env,m.send)).status,409);assert.deepEqual(m.calls.map(c=>c.method),["getMe"])});
+test("existing other webhook is never overwritten",async()=>{const m=mock("https://example.com/hook");assert.equal((await handleSetup(request(),env,m.send)).status,409);assert.deepEqual(m.calls.map(c=>c.method),["getMe","getWebhookInfo"])});
+test("existing desired webhook is not blindly reset",async()=>{const m=mock(W);assert.equal((await handleSetup(request(),env,m.send)).status,200);assert.deepEqual(m.calls.map(c=>c.method),["getMe","getWebhookInfo"])});
+test("setup registers fixed target with secret, preserves pending updates, reads back",async()=>{const m=mock();const res=await handleSetup(request(),env,m.send);assert.equal(res.status,200);assert.equal((await res.json()).status,"WEBHOOK_REGISTERED_OWNER_TEST_REQUIRED");assert.deepEqual(m.calls.map(c=>c.method),["getMe","getWebhookInfo","setWebhook","getWebhookInfo"]);assert.deepEqual(m.calls[2].body,{url:W,secret_token:S,allowed_updates:["message"],max_connections:1,drop_pending_updates:false})});
+test("upstream errors are sanitized",async()=>{const res=await handleSetup(request(),env,async()=>{throw Error("SECRET_MUST_NOT_ESCAPE")});assert.equal(res.status,502);assert.equal((await res.json()).status,"GET_ME_FAILED")});
