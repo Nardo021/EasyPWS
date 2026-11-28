@@ -245,7 +245,45 @@ export default {
   }
 });
 
+function runTsc(args: string[]): Promise<{ code: number; output: string }> {
+  const tsc = require.resolve("typescript/bin/tsc");
+  return new Promise((done, reject) => {
+    const child = spawn(process.execPath, [tsc, ...args], { cwd: repoRoot, windowsHide: true });
+    let output = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      output += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      output += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => done({ code: code ?? 1, output }));
+  });
+}
+
+async function ensureAdapterDist(): Promise<void> {
+  const entry = resolve(repoRoot, "packages/adapters/dist/provider/omkar-map.js");
+  const project = resolve(repoRoot, "packages/adapters");
+  try {
+    await access(entry);
+    return;
+  } catch {
+    // The production bundle resolves the package export, which points at dist.
+  }
+  const built = await runTsc(["-b", project]);
+  assert.equal(built.code, 0, built.output.slice(-1500));
+  try {
+    await access(entry);
+  } catch {
+    const forced = await runTsc(["-b", project, "--force"]);
+    assert.equal(forced.code, 0, forced.output.slice(-1500));
+  }
+}
+
 test("production wrangler dry-run keeps the private entrypoint and one cron", { timeout: 180000 }, async () => {
+  await ensureAdapterDist();
   const assets = resolve(repoRoot, "apps/web/out");
   await mkdir(assets, { recursive: true });
   try {
