@@ -16,7 +16,7 @@ Fixture reports, invalid quotes, the first price, unchanged or rising prices, an
 ## Verification on this machine
 
 - `pnpm build`, `pnpm typecheck`, `pnpm test`, and `pnpm lint` passed.
-- `pnpm test` includes Telegram 33 tests and the lite local-D1 suite (atomicity, repeated cycles, stale target, same-timestamp race, opt-in backlog, ledger replay).
+- `pnpm test` includes Telegram 33 tests and the lite local-D1 suite (atomicity, repeated cycles, stale target, same-timestamp race, opt-in backlog, ledger replay). The lite test resolves workspace packages from source, so it also runs in the CI job that does not build first.
 - `pnpm --filter @easypws/lite run check:monitor` passed: `externalRequests 0`, `monitorUsedToday 15`.
 - Browser check on fixture `http://127.0.0.1:8790`: default off, acknowledgement required, opt-in, opt-out, and search still returned the local milk sample. Health stayed `fixture` with `externalRequests 0`.
 
