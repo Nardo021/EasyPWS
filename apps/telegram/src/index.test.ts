@@ -85,18 +85,20 @@ test("owner /start receives a private acknowledgement and receipt", async () => 
   const response = await handleTelegramWebhook(request(), env(db), send);
   assert.equal(response.status, 200);
   assert.equal(sends.length, 1);
-  assert.match(sends[0] ?? "", /安全接入阶段/);
+  assert.match(sends[0] ?? "", /不是 Coles 官方核验价/);
   assert.equal(db.receipts.get(123), "sent");
 });
 
-test("owner /help describes future commands as unavailable", async () => {
+test("owner /help lists read-only queries and the price caveat", async () => {
   const messages: string[] = [];
   const response = await handleTelegramWebhook(
     request(update("/help")), env(), async (m) => { messages.push(m.text); },
   );
   assert.equal(response.status, 200);
-  assert.match(messages[0] ?? "", /尚未启用/);
-  assert.match(messages[0] ?? "", /非 Coles 官方核验价/);
+  assert.match(messages[0] ?? "", /\/search/);
+  assert.match(messages[0] ?? "", /\/deals/);
+  assert.match(messages[0] ?? "", /不是 Coles 官方核验价/);
+  assert.match(messages[0] ?? "", /不会刷新价格/);
 });
 
 test("missing webhook header is denied before any database access or message", async () => {
@@ -186,12 +188,69 @@ test("unknown or timed-out message send is recorded failed, never blindly resent
   assert.equal(db.receipts.get(123), "failed");
 });
 
-test("unimplemented price commands make no price-provider call", async () => {
+test("price command without the private binding does not invent a price", async () => {
   const msg: string[] = [];
   const response = await handleTelegramWebhook(request(update("/price 1251527")), env(),
     async ({ text }) => { msg.push(text); });
   assert.equal(response.status, 200);
-  assert.match(msg[0] ?? "", /尚未开放|将在后续阶段启用/);
+  assert.match(msg[0] ?? "", /查询服务未连接/);
+  assert.equal((msg[0] ?? "").includes("AUD"), false);
+});
+
+test("malformed query arguments never call the price binding", async () => {
+  let calls = 0;
+  const bound = env();
+  bound.PRICE_QUERY = { query: async () => { calls += 1; return { status: "ok", text: "AUD 1.00" }; } };
+  const messages: string[] = [];
+  for (const [index, text] of ["/search a", "/price abc", "/history", "/search " + "词".repeat(81)].entries()) {
+    const response = await handleTelegramWebhook(request(update(text, { id: 10 + index })), bound,
+      async ({ text: sent }) => { messages.push(sent); });
+    assert.equal(response.status, 200, text);
+  }
+  assert.equal(messages.length, 4);
+  assert.equal(calls, 0);
+  assert.equal(messages.some((message) => message.includes("AUD")), false);
+});
+
+test("a query result is sent once and invalid RPC output is not forwarded", async () => {
+  const seen: unknown[] = [];
+  const db = new FakeDb();
+  const bound = env(db);
+  bound.PRICE_QUERY = {
+    query: async (input) => {
+      seen.push(input);
+      return { status: "ok", text: "SKU 1251527｜AUD 3.30\n不是 Coles 官方核验价。" };
+    },
+  };
+  const messages: string[] = [];
+  const sender: MessageSender = async ({ text }) => { messages.push(text); };
+  const first = await handleTelegramWebhook(request(update("/price 1251527", { id: 77 })), bound, sender);
+  const second = await handleTelegramWebhook(request(update("/price 1251527", { id: 77 })), bound, sender);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(seen.length, 1);
+  assert.equal(messages.length, 1);
+  const payload = seen[0] as { operation?: string; requestKey?: string; argument?: string };
+  assert.equal(payload.operation, "price");
+  assert.equal(payload.argument, "1251527");
+  assert.match(payload.requestKey ?? "", /^[0-9a-f]{64}$/);
+  assert.equal(JSON.stringify(payload).includes(OWNER_ID), false);
+
+  bound.PRICE_QUERY = { query: async () => ({ status: "leaked", text: "https://evil.example" }) };
+  const rejected: string[] = [];
+  const bad = await handleTelegramWebhook(request(update("/watchlist", { id: 78 })), bound,
+    async ({ text }) => { rejected.push(text); });
+  assert.equal(bad.status, 200);
+  assert.match(rejected[0] ?? "", /无法使用/);
+  assert.equal((rejected[0] ?? "").includes("evil.example"), false);
+
+  bound.PRICE_QUERY = { query: async () => { throw new Error("rpc down"); } };
+  const failed: string[] = [];
+  const broken = await handleTelegramWebhook(request(update("/deals", { id: 79 })), bound,
+    async ({ text }) => { failed.push(text); });
+  assert.equal(broken.status, 200);
+  assert.match(failed[0] ?? "", /没有重试/);
+  assert.equal(db.receipts.get(79), "sent");
 });
 
 test("oversized and malformed JSON are rejected", async () => {

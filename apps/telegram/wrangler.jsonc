@@ -46,7 +46,14 @@
           "TELEGRAM_OWNER_USER_ID",
           "TELEGRAM_OWNER_CHAT_ID"
         ]
-      }
+      },
+      "services": [
+        {
+          "binding": "PRICE_QUERY",
+          "service": "easypws",
+          "entrypoint": "PriceQuery"
+        }
+      ]
     }
   }
 }
