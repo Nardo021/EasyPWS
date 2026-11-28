@@ -12,12 +12,16 @@ import {
   type Env,
 } from "./catalogue.js";
 import { COLES_MARRICKVILLE_STORE_ID } from "@easypws/adapters/omkar";
-import { monitorUsage, runMonitor } from "./monitor.js";
+import { setTelegramAlerts, telegramAlertsEnabled } from "./alerts.js";
+import { monitorUsage, runScheduled } from "./monitor.js";
 import {
   getItem,
   history,
   listItems,
   removeItem,
+  applyRefresh,
+  readRefreshSnapshot,
+  readSkuSnapshot,
   saveProduct,
   setStatus,
   setTarget,
@@ -134,24 +138,28 @@ async function route(request: Request, env: Env, url: URL, owner: string | null)
       throw new HttpError(400, "请粘贴 coles.com.au 商品链接");
     }
     const target = typeof body["targetPrice"] === "number" ? body["targetPrice"] : undefined;
+    const known = await readSkuSnapshot(env, productId);
     const { product, live: fetchedLive } = await detailsReported(env, productId);
-    const id = await saveProduct(env, product, sourceCopy(fetchedLive), target);
-    return json({ ok: true, watchlistItemId: id });
+    const saved = await saveProduct(env, product, sourceCopy(fetchedLive), target, fetchedLive, known);
+    const accepted = saved.outcome === "committed" || saved.outcome === "preserved";
+    return json({ ok: accepted, watchlistItemId: saved.id, outcome: saved.outcome }, accepted ? 200 : 409);
   }
 
   const refreshId = itemId(path, "/refresh");
   if (method === "POST" && refreshId) {
-    const current = await env.DB.prepare(
-      "SELECT retailer_product_id FROM watched_products WHERE id = ?",
-    )
-      .bind(refreshId)
-      .first<{ retailer_product_id: string }>();
-    if (!current) {
+    const snapshot = await readRefreshSnapshot(env, refreshId);
+    if (!snapshot) {
       throw new HttpError(404, "收藏里没有这个商品");
     }
-    const { product, live: fetchedLive } = await detailsReported(env, current.retailer_product_id);
-    await saveProduct(env, product, sourceCopy(fetchedLive));
-    return json({ ok: true });
+    const { product, live: fetchedLive } = await detailsReported(env, snapshot.retailerProductId);
+    const outcome = await applyRefresh(env, snapshot, product, sourceCopy(fetchedLive), fetchedLive);
+    if (outcome === "missing") {
+      throw new HttpError(404, "收藏里没有这个商品");
+    }
+    if (outcome !== "committed") {
+      return json({ ok: false, outcome }, 409);
+    }
+    return json({ ok: true, outcome });
   }
 
   const statusId = itemId(path, "/status");
@@ -189,6 +197,22 @@ async function route(request: Request, env: Env, url: URL, owner: string | null)
       throw new HttpError(404, "收藏里没有这个商品");
     }
     return json({ ok: true });
+  }
+
+  if (path === "/api/v1/notifications/telegram" && method === "GET") {
+    return json({ enabled: await telegramAlertsEnabled(env) });
+  }
+
+  if (path === "/api/v1/notifications/telegram" && method === "POST") {
+    const body = await readJson(request);
+    if (typeof body["enabled"] !== "boolean") {
+      throw new HttpError(400, "请明确开启或关闭提醒");
+    }
+    if (body["enabled"] === true && body["acknowledged"] !== true) {
+      throw new HttpError(400, "请先确认价格是第三方报告价，不是 Coles 官方核验价");
+    }
+    await setTelegramAlerts(env, body["enabled"], new Date().toISOString());
+    return json({ enabled: body["enabled"] });
   }
 
   const historyMatch = path.match(/^\/api\/v1\/prices\/listings\/([^/]+)\/history$/);
@@ -231,6 +255,6 @@ export default {
     }
   },
   async scheduled(_controller, env): Promise<void> {
-    await runMonitor(env);
+    await runScheduled(env);
   },
 } satisfies ExportedHandler<Env>;

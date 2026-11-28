@@ -223,6 +223,20 @@ test("no token, no owner binding or no DB: never accepts webhook", async () => {
   }
 });
 
+test("price delivery is not a public fetch route", async () => {
+  for (const path of ["/deliver", "/alerts", "/webhook/send"]) {
+    const response = await handleTelegramWebhook(
+      new Request(`https://bot.example.test${path}`, { method: "POST" }),
+      env(),
+      async () => { assert.fail("must not send"); },
+    );
+    assert.equal(response.status, 404);
+    const body = await response.json() as { ok?: unknown };
+    assert.equal(body.ok, false);
+    assert.equal(JSON.stringify(body).includes(OWNER_ID), false);
+  }
+});
+
 test("only POST /webhook is supported, unknown paths expose no owner details", async () => {
   const get = new Request("https://bot.example.test/health");
   const response = await handleTelegramWebhook(get, env(), async () => {

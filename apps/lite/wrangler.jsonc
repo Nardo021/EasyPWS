@@ -54,6 +54,14 @@
           "database_id": "cf8c92cf-939f-4535-b47b-95e687a8a99a",
           "migrations_dir": "migrations"
         }
+      ],
+      // Staged private RPC only. This phase does not deploy, migrate, or add a Cron.
+      "services": [
+        {
+          "binding": "TELEGRAM_ALERTS",
+          "service": "easypws-telegram",
+          "entrypoint": "AlertDelivery"
+        }
       ]
     }
   }

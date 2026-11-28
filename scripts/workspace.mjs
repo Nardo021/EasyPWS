@@ -25,6 +25,7 @@ const TEST_PACKAGES = [
   "@easypws/database",
   "@easypws/services",
   "@easypws/telegram",
+  "@easypws/lite",
 ];
 
 const LIBRARY_FILTER = "./packages/*";

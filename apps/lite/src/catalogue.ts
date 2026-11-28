@@ -4,6 +4,7 @@ import {
   omkarProductRows,
   type MappedOmkarProduct,
 } from "@easypws/adapters/omkar";
+import type { TelegramAlertService } from "./alert-types.js";
 
 export const STORE_NAME = "Coles Marrickville, NSW";
 
@@ -16,6 +17,8 @@ export interface Env {
   EASYPWS_RUNTIME?: string;
   /** Local production-guard only. Ignored unless the request host is loopback. */
   EASYPWS_ACCESS_TEST_JWK?: string;
+  /** Private Telegram RPC. Absent in local dev; never a public fetch route. */
+  TELEGRAM_ALERTS?: TelegramAlertService;
 }
 
 const HOST = "best-coles-scraper-free-1000-calls.p.rapidapi.com";
@@ -60,7 +63,7 @@ export function sourceCopy(live: boolean): { sourceLabel: string; priceNote: str
   if (live) {
     return {
       sourceLabel: "Omkar Hosted API",
-      priceNote: "API 报告价，不是 Coles 官方核验价。不发送通知。",
+      priceNote: "API 报告价，不是 Coles 官方核验价。",
     };
   }
   return {

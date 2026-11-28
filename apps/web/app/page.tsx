@@ -31,6 +31,9 @@ export default function HomePage() {
   const [points, setPoints] = useState<PricePoint[]>([]);
   const [targetDrafts, setTargetDrafts] = useState<Record<string, string>>({});
   const [pending, startTransition] = useTransition();
+  const [alertsEnabled, setAlertsEnabled] = useState(false);
+  const [alertsReady, setAlertsReady] = useState(false);
+  const [alertAck, setAlertAck] = useState(false);
 
   const selectedItem = useMemo(
     () => items.find((i) => i.listingId === selected) ?? null,
@@ -94,6 +97,15 @@ export default function HomePage() {
           const data = await easypwsApi.listWatchlist();
           if (!cancelled) {
             applyItems(data.items);
+          }
+          try {
+            const alerts = await easypwsApi.telegramAlerts();
+            if (!cancelled) {
+              setAlertsEnabled(alerts.enabled);
+              setAlertsReady(true);
+            }
+          } catch {
+            // The watchlist stays usable when the alert preference cannot be read.
           }
           return;
         }
@@ -200,6 +212,68 @@ export default function HomePage() {
       </>
       )}
       {info ? <p className="meta">{info}</p> : null}
+
+      {localMode && alertsReady ? (
+        <section className="panel">
+          <h2 className="section-title">Telegram 价格提醒</h2>
+          <p className="meta">
+            默认关闭。开启后，只把之后的降价发到已绑定的所有者私聊。价格是第三方 API 报告价，不是 Coles 官方核验价。关闭、暂停或删除只会停掉尚未认领的提醒，已有记录会保留。一旦认领成功，这条提醒可能仍会发出，而且无法撤回。关闭期间的降价在再次开启后不会补发。
+          </p>
+          <p className="meta">当前：{alertsEnabled ? "已开启" : "已关闭"}</p>
+          {alertsEnabled ? null : (
+            <label className="meta" style={{ display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+              <input
+                className="check"
+                type="checkbox"
+                checked={alertAck}
+                onChange={(event) => setAlertAck(event.target.checked)}
+              />
+              <span>我了解这些价格不是 Coles 官方核验价，并只想接收之后的提醒。</span>
+            </label>
+          )}
+          <div className="row" style={{ marginTop: "0.75rem" }}>
+            {alertsEnabled ? (
+              <button
+                type="button"
+                className="secondary"
+                disabled={pending}
+                onClick={() => {
+                  startTransition(async () => {
+                    setError(null);
+                    try {
+                      const next = await easypwsApi.setTelegramAlerts(false);
+                      setAlertsEnabled(next.enabled);
+                      setAlertAck(false);
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : String(err));
+                    }
+                  });
+                }}
+              >
+                关闭提醒
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={pending || !alertAck}
+                onClick={() => {
+                  startTransition(async () => {
+                    setError(null);
+                    try {
+                      const next = await easypwsApi.setTelegramAlerts(true, true);
+                      setAlertsEnabled(next.enabled);
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : String(err));
+                    }
+                  });
+                }}
+              >
+                开启后续提醒
+              </button>
+            )}
+          </div>
+        </section>
+      ) : null}
 
       <section className="panel">
         <h2 className="section-title">搜索 Coles</h2>

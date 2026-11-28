@@ -13,7 +13,8 @@ EasyPWS V2 is a **private, owner-only Coles price watcher**. Keep the Worker + D
 | Phase 1D Private Cloudflare release | PRIVATE_DEPLOYED (owner confirmed 2026-11-23) | Owner-only Access, D1, real Static Assets, custom domain, disabled workers.dev |
 | **Phase 1E-A Git baseline** | **Completed, main CI success (2026-11-23)** | PR #3–#7 merged sequentially, main CI #45164141858 passed; no production redeploy. |
 | **Phase 1E-B Automatic checks** | **CRON_CONFIGURED / LIVE_CHECK_PENDING** | PR #8 merged, main CI #45167271907 passed, remote one daily Cron 22:00 UTC verified. Add a genuine watchlist item and confirm a real scheduled check. |
-| Phase 1F Notification MVP | Proposed | Owner-approved channel and explicit API-reported-price wording, no repeated spam |
+| Phase 1F-A Telegram webhook | Merged on main `90a6e23` | Isolated owner webhook only |
+| Phase 1F-B Telegram price alerts | Source drafted, R3 lifecycle atomicity not deployed | Draft PR #11. No production migration, new Cron, secret change, or real Telegram send |
 | Phase 2A Mobile PWA | Proposed | Mobile usability, install manifest/icons; don't claim installable PWA before validation |
 | Phase 2B Watchlist-first specials | Proposed | Useful watched-product deals, no indiscriminate full-catalog scrape |
 | Phase 3 Other stores/providers | Deferred | Real need, quota/cost check, evidence before expansion |
@@ -22,7 +23,7 @@ EasyPWS V2 is a **private, owner-only Coles price watcher**. Keep the Worker + D
 
 **Constraints:** one user; Coles store 4166; Omkar API-reported price only; no unverified "official" specials; 15 automatic checks per Australia/Sydney day in current handler; manual API requests also consume provider quota. No multitenant auth, queues, whole-site specials scraping, new provider integrations or remote Cron changes without a specific need and approval.
 
-Links: [Phase 1D history](v2/phase-01d-private-launch.md), [Phase 1C checks](v2/phase-01c-auto-monitor.md), [Provider gate](v2/phase-00-results.md).
+Links: [Phase 1F-B alerts](v2/phase-01f-b-telegram-alerts.md), [Phase 1F-A webhook](v2/phase-01f-a-telegram-foundation.md), [Phase 1D history](v2/phase-01d-private-launch.md), [Phase 1C checks](v2/phase-01c-auto-monitor.md), [Provider gate](v2/phase-00-results.md).
 
 ---
 
