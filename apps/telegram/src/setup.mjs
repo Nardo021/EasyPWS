@@ -24,13 +24,36 @@ export async function handleSetup(request, env, telegramFetch = fetch) {
       !ID.test(env.TELEGRAM_OWNER_USER_ID ?? "") || !ID.test(env.TELEGRAM_OWNER_CHAT_ID ?? "") ||
       env.TELEGRAM_OWNER_USER_ID !== env.TELEGRAM_OWNER_CHAT_ID ||
       !Number.isSafeInteger(Number(env.TELEGRAM_OWNER_USER_ID))) return reply(503,"CONFIG_INVALID");
+  // Only controlled error codes cross the owner-authenticated boundary.
+  class TelegramFailure extends Error {
+    constructor(code) { super(code); this.code = code; }
+  }
   const api = async (method, body) => {
-    const response = await telegramFetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/" + method, {
-      method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(body ?? {}), signal:AbortSignal.timeout(10000), redirect:"error"
-    });
-    const data = await response.json();
-    if (!response.ok || data?.ok !== true) throw new Error("TELEGRAM_API_FAILED");
-    return data.result;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await telegramFetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/" + method, {
+        ...(body === undefined ? {method:"GET"} : {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(body)}),
+        signal:controller.signal, redirect:"error"
+      });
+      if (!response.ok) {
+        const status = response.status;
+        throw new TelegramFailure(Number.isInteger(status) && status >= 400 && status <= 599 ? "HTTP_" + status : "HTTP_ERROR");
+      }
+      let data;
+      try { data = await response.json(); }
+      catch { throw new TelegramFailure(controller.signal.aborted ? "TIMEOUT" : "INVALID_JSON"); }
+      if (data?.ok !== true) {
+        const code = data?.error_code;
+        throw new TelegramFailure(Number.isInteger(code) && code >= 400 && code <= 599 ? "API_" + code : "API_ERROR");
+      }
+      return data.result;
+    } catch (error) {
+      if (error instanceof TelegramFailure) throw error;
+      throw new TelegramFailure(controller.signal.aborted || error?.name === "TimeoutError" || error?.name === "AbortError" ? "TIMEOUT" : "NETWORK_FAILED");
+    } finally {
+      clearTimeout(timer);
+    }
   };
   let stage = "DB";
   try {
@@ -50,8 +73,8 @@ export async function handleSetup(request, env, telegramFetch = fetch) {
     const after = await api("getWebhookInfo");
     if (after?.url !== WEBHOOK) return reply(502,"READBACK_MISMATCH");
     return reply(200,"WEBHOOK_REGISTERED_OWNER_TEST_REQUIRED");
-  } catch {
-    // Do not log any exception or upstream response, which may contain credentials.
-    return reply(502,stage+"_FAILED");
+  } catch (error) {
+    // Do not log exceptions or upstream responses: they may contain credentials.
+    return reply(502,stage+"_"+(error instanceof TelegramFailure ? error.code : "FAILED"));
   }
 }
