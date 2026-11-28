@@ -298,6 +298,8 @@ test("production wrangler dry-run keeps the private entrypoint and one cron", { 
   assert.match(crons[0]?.[1] ?? "", /"0 22 \* \* \*"/);
   assert.equal(telegramConfig.includes("\"crons\""), false);
   assert.match(liteConfig, /"entrypoint": "AlertDelivery"/);
+  assert.match(telegramConfig, /"entrypoint": "PriceQuery"/);
+  assert.equal(telegramConfig.includes("\"crons\""), false);
   const out = await mkdtemp(resolve(tmpdir(), "easypws-dry-"));
   try {
     const lite = await runWrangler(liteRoot, [
@@ -314,11 +316,12 @@ test("production wrangler dry-run keeps the private entrypoint and one cron", { 
     assert.match(telegram.output, /env\.DB \(easypws-telegram\)/);
     assert.match(telegram.output, /--dry-run: exiting now/);
     assert.equal(telegram.output.includes("Current Version ID"), false);
+    assert.match(telegram.output, /easypws#PriceQuery/);
     assert.equal(telegram.output.includes("AlertDelivery"), false);
   } finally {
     await rm(out, { recursive: true, force: true });
   }
-  for (const path of ["/api/v1/deliver", "/api/v1/alerts", "/api/v1/notifications/telegram/send"]) {
+  for (const path of ["/api/v1/deliver", "/api/v1/alerts", "/api/v1/notifications/telegram/send", "/api/v1/query", "/api/v1/price-query"]) {
     const denied = await app.fetch(new Request(`http://127.0.0.1${path}`, { method: "POST" }), {} as Env, ctx());
     assert.equal(denied.status, 404, path);
   }
