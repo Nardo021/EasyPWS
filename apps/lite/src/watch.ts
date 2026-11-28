@@ -1,7 +1,6 @@
 import type { MappedOmkarProduct } from "@easypws/adapters/omkar";
 import { COLES_MARRICKVILLE_STORE_ID } from "@easypws/adapters/omkar";
 import { STORE_NAME, type Env } from "./catalogue.js";
-import { suppressQueuedForProduct } from "./alerts.js";
 import { commitWatchedPrice } from "./commit.js";
 import { alertText, sydneyDay } from "./monitor.js";
 
@@ -313,39 +312,49 @@ export async function saveProduct(
   }
   const id = crypto.randomUUID();
   const price = usablePrice(product);
-  const inserted = await env.DB.prepare(
-    `INSERT INTO watched_products (
-      id, retailer_product_id, store_id, name, brand, size, product_url, image_url,
-      current_price, regular_price, promotion_type, promotion_kind, in_stock, availability_known,
-      source_label, price_note, source_timestamp, retrieved_at, target_price, monitoring_status,
-      notification_eligible, created_at, revision
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, 0)
-    ON CONFLICT(retailer_product_id, store_id) DO NOTHING`,
-  )
-    .bind(
-      id,
-      product.retailerProductId,
-      COLES_MARRICKVILLE_STORE_ID,
-      product.name,
-      product.brand,
-      product.size,
-      product.productUrl,
-      product.imageUrl,
-      price,
-      product.regularPrice,
-      product.promotionType,
-      product.promotionKind,
-      product.inStock ? 1 : 0,
-      product.availabilityKnown ? 1 : 0,
-      copy.sourceLabel,
-      copy.priceNote,
-      product.sourceTimestamp,
-      now,
-      targetPrice ?? null,
-      now,
+  const statements = [
+    env.DB.prepare(
+      `INSERT INTO watched_products (
+        id, retailer_product_id, store_id, name, brand, size, product_url, image_url,
+        current_price, regular_price, promotion_type, promotion_kind, in_stock, availability_known,
+        source_label, price_note, source_timestamp, retrieved_at, target_price, monitoring_status,
+        notification_eligible, created_at, revision
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, 0)
+      ON CONFLICT(retailer_product_id, store_id) DO NOTHING`,
     )
-    .run();
-  if ((inserted.meta.changes ?? 0) !== 1) {
+      .bind(
+        id,
+        product.retailerProductId,
+        COLES_MARRICKVILLE_STORE_ID,
+        product.name,
+        product.brand,
+        product.size,
+        product.productUrl,
+        product.imageUrl,
+        price,
+        product.regularPrice,
+        product.promotionType,
+        product.promotionKind,
+        product.inStock ? 1 : 0,
+        product.availabilityKnown ? 1 : 0,
+        copy.sourceLabel,
+        copy.priceNote,
+        product.sourceTimestamp,
+        now,
+        targetPrice ?? null,
+        now,
+      ),
+  ];
+  if (price !== null) {
+    statements.push(env.DB.prepare(
+      `INSERT INTO price_observations (product_id, observed_at, price, regular_price, promotion_type)
+       SELECT ?, ?, ?, ?, ?
+       WHERE changes() = 1
+         AND EXISTS (SELECT 1 FROM watched_products WHERE id = ?)`,
+    ).bind(id, now, price, product.regularPrice, product.promotionType, id));
+  }
+  const inserted = await env.DB.batch(statements);
+  if ((inserted[0]?.meta?.changes ?? 0) !== 1) {
     const winner = await readSkuSnapshot(env, product.retailerProductId);
     if (!winner) {
       return { id, outcome: "missing" };
@@ -358,40 +367,41 @@ export async function saveProduct(
     const outcome = await commitExisting(env, winner, product, copy, targetPrice, live, now);
     return { id: winner.id, outcome };
   }
-  if (price !== null) {
-    await env.DB.prepare(
-      `INSERT INTO price_observations (product_id, observed_at, price, regular_price, promotion_type)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-      .bind(id, now, price, product.regularPrice, product.promotionType)
-      .run();
-  }
   return { id, outcome: "committed" };
 }
 
 export async function removeItem(env: Env, id: string): Promise<boolean> {
-  const existing = await env.DB.prepare("SELECT id FROM watched_products WHERE id = ?").bind(id).first();
-  if (!existing) {
-    return false;
-  }
-  await suppressQueuedForProduct(env, id, new Date().toISOString());
-  await env.DB.prepare("DELETE FROM price_observations WHERE product_id = ?").bind(id).run();
-  await env.DB.prepare("DELETE FROM alert_events WHERE product_id = ?").bind(id).run();
-  await env.DB.prepare("DELETE FROM watched_products WHERE id = ?").bind(id).run();
-  return true;
+  const at = new Date().toISOString();
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE notification_outbox
+       SET status = 'suppressed', updated_at = ?
+       WHERE status = 'queued' AND transition_id IN (
+         SELECT id FROM price_transitions WHERE product_id = ?
+       )`,
+    ).bind(at, id),
+    env.DB.prepare("DELETE FROM price_observations WHERE product_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM alert_events WHERE product_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM watched_products WHERE id = ?").bind(id),
+  ]);
+  return (results[3]?.meta?.changes ?? 0) > 0;
 }
 
 export async function setStatus(env: Env, id: string, status: "active" | "paused"): Promise<boolean> {
-  const result = await env.DB.prepare(
-    "UPDATE watched_products SET monitoring_status = ?, revision = revision + 1 WHERE id = ?",
-  )
-    .bind(status, id)
-    .run();
-  const updated = (result.meta.changes ?? 0) > 0;
-  if (updated && status === "paused") {
-    await suppressQueuedForProduct(env, id, new Date().toISOString());
-  }
-  return updated;
+  const at = new Date().toISOString();
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE watched_products SET monitoring_status = ?, revision = revision + 1 WHERE id = ?",
+    ).bind(status, id),
+    env.DB.prepare(
+      `UPDATE notification_outbox
+       SET status = 'suppressed', updated_at = ?
+       WHERE ? = 'paused' AND changes() = 1 AND status = 'queued' AND transition_id IN (
+         SELECT id FROM price_transitions WHERE product_id = ?
+       )`,
+    ).bind(at, status, id),
+  ]);
+  return (results[0]?.meta?.changes ?? 0) > 0;
 }
 
 export async function setTarget(env: Env, id: string, targetPrice: number): Promise<boolean> {

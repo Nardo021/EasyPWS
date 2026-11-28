@@ -66,18 +66,6 @@ export async function setTelegramAlerts(env: Env, enabled: boolean, at: string):
   ]);
 }
 
-export async function suppressQueuedForProduct(env: Env, productId: string, at: string): Promise<void> {
-  await env.DB.prepare(
-    `UPDATE notification_outbox
-     SET status = 'suppressed', updated_at = ?
-     WHERE status = 'queued' AND transition_id IN (
-       SELECT id FROM price_transitions WHERE product_id = ?
-     )`,
-  )
-    .bind(at, productId)
-    .run();
-}
-
 async function preferenceOn(env: Env): Promise<boolean> {
   return telegramAlertsEnabled(env);
 }
@@ -189,7 +177,8 @@ async function currentEpoch(env: Env): Promise<number | null> {
 export async function dispatchOutbox(env: Env, now = new Date()): Promise<{ inspected: number }> {
   const at = now.toISOString();
   // A sending row whose lease has expired was abandoned. Mark it unknown and do not send it again.
-  // A request that already reached Telegram cannot be recalled by a later opt-out.
+  // A successful claim is the linearization point. That alert may still be sent.
+  // Pause, delete, and opt-out do not recall it.
   await reconcileAbandoned(env, at);
   await env.DB.prepare(
     `UPDATE notification_outbox

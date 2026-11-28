@@ -9,7 +9,7 @@
     "check:local": "node scripts/smoke-local.mjs",
     "check:monitor": "node scripts/smoke-monitor.mjs",
     "check:production": "node scripts/smoke-production.mjs",
-    "test": "node --conditions=easypws-source --import tsx --test --test-concurrency=1 --test-force-exit src/alerts.integration.test.ts src/review-r2.integration.test.ts src/rpc.integration.test.ts"
+    "test": "node --conditions=easypws-source --import tsx --test --test-concurrency=1 --test-force-exit src/alerts.integration.test.ts src/review-r2.integration.test.ts src/review-r3.integration.test.ts src/rpc.integration.test.ts"
   },
   "dependencies": {
     "@easypws/adapters": "workspace:*"
