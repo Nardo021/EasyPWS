@@ -34,8 +34,12 @@ export async function handleSetup(request, env, telegramFetch = fetch) {
     try {
       const response = await telegramFetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/" + method, {
         ...(body === undefined ? {method:"GET"} : {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(body)}),
-        signal:controller.signal, redirect:"error"
+        // Workers does not implement redirect:"error". Do not follow any redirect.
+        signal:controller.signal, redirect:"manual"
       });
+      if (response.status >= 300 && response.status < 400) {
+        throw new TelegramFailure("UNEXPECTED_REDIRECT");
+      }
       if (!response.ok) {
         const status = response.status;
         throw new TelegramFailure(Number.isInteger(status) && status >= 400 && status <= 599 ? "HTTP_" + status : "HTTP_ERROR");
