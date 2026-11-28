@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -31,6 +32,7 @@ const { getPlatformProxy, createTestHarness } = require("wrangler") as {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const liteRoot = resolve(here, "..");
+const repoRoot = resolve(here, "../../..");
 const telegramRoot = resolve(here, "../../telegram");
 const migrations = ["0001_watch.sql", "0002_monitor.sql", "0003_alert_outbox.sql", "0004_alert_consistency.sql", "0005_telegram_queries.sql"];
 const MILK = {
@@ -334,7 +336,45 @@ test("telegram quota, cache, replay and stored reads use a real local D1", { tim
   }
 });
 
+function runTsc(args: string[]): Promise<{ code: number; output: string }> {
+  const tsc = require.resolve("typescript/bin/tsc");
+  return new Promise((done, reject) => {
+    const child = spawn(process.execPath, [tsc, ...args], { cwd: repoRoot, windowsHide: true });
+    let output = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      output += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      output += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => done({ code: code ?? 1, output }));
+  });
+}
+
+async function ensureAdapterDist(): Promise<void> {
+  const entry = resolve(repoRoot, "packages/adapters/dist/provider/omkar-map.js");
+  const project = resolve(repoRoot, "packages/adapters");
+  try {
+    await access(entry);
+    return;
+  } catch {
+    // Fresh CI typechecks without the workspace build. The Worker bundle resolves dist.
+  }
+  const built = await runTsc(["-b", project]);
+  assert.equal(built.code, 0, built.output.slice(-1500));
+  try {
+    await access(entry);
+  } catch {
+    const forced = await runTsc(["-b", project, "--force"]);
+    assert.equal(forced.code, 0, forced.output.slice(-1500));
+  }
+}
+
 test("both private RPC directions work across two local workers", { timeout: 180000 }, async () => {
+  await ensureAdapterDist();
   const root = await mkdtemp(resolve(tmpdir(), "easypws-query-rpc-"));
   const server = createTestHarness({
     root,
