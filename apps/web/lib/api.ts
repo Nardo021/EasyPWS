@@ -137,4 +137,10 @@ export const easypwsApi = {
     api<{ points: PricePoint[]; summary: WatchlistItem }>(
       `/prices/listings/${listingId}/history`,
     ),
+  telegramAlerts: () => api<{ enabled: boolean }>("/notifications/telegram"),
+  setTelegramAlerts: (enabled: boolean, acknowledged = false) =>
+    api<{ enabled: boolean }>("/notifications/telegram", {
+      method: "POST",
+      body: JSON.stringify({ enabled, acknowledged }),
+    }),
 };

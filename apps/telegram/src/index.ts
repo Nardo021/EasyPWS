@@ -40,7 +40,7 @@ function validTelegramId(value: string | undefined): value is string {
     && Number.isSafeInteger(Number(value));
 }
 
-function configured(env: TelegramEnv): boolean {
+export function configured(env: TelegramEnv): boolean {
   return !!env.DB
     && typeof env.TELEGRAM_BOT_TOKEN === "string"
     && /^[0-9]{4,}:[A-Za-z0-9_-]{20,}$/.test(env.TELEGRAM_BOT_TOKEN)
@@ -94,7 +94,7 @@ async function readBoundedBody(request: Request): Promise<string | null> {
     bytes.set(part, offset);
     offset += part.byteLength;
   }
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes);
 }
 
 function authorizedMessage(update: JsonObject, env: TelegramEnv): { id: number; chatId: string; command: string } | null {

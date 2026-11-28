@@ -8,13 +8,16 @@
     "dev": "node scripts/dev-local.mjs",
     "check:local": "node scripts/smoke-local.mjs",
     "check:monitor": "node scripts/smoke-monitor.mjs",
-    "check:production": "node scripts/smoke-production.mjs"
+    "check:production": "node scripts/smoke-production.mjs",
+    "test": "tsx --test --test-force-exit src/alerts.integration.test.ts"
   },
   "dependencies": {
     "@easypws/adapters": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261110.1",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "wrangler": "^4.46.0"
   }

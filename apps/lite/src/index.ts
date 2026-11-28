@@ -12,7 +12,8 @@ import {
   type Env,
 } from "./catalogue.js";
 import { COLES_MARRICKVILLE_STORE_ID } from "@easypws/adapters/omkar";
-import { monitorUsage, runMonitor } from "./monitor.js";
+import { setTelegramAlerts, telegramAlertsEnabled } from "./alerts.js";
+import { monitorUsage, runScheduled } from "./monitor.js";
 import {
   getItem,
   history,
@@ -135,7 +136,7 @@ async function route(request: Request, env: Env, url: URL, owner: string | null)
     }
     const target = typeof body["targetPrice"] === "number" ? body["targetPrice"] : undefined;
     const { product, live: fetchedLive } = await detailsReported(env, productId);
-    const id = await saveProduct(env, product, sourceCopy(fetchedLive), target);
+    const id = await saveProduct(env, product, sourceCopy(fetchedLive), target, fetchedLive);
     return json({ ok: true, watchlistItemId: id });
   }
 
@@ -150,7 +151,7 @@ async function route(request: Request, env: Env, url: URL, owner: string | null)
       throw new HttpError(404, "收藏里没有这个商品");
     }
     const { product, live: fetchedLive } = await detailsReported(env, current.retailer_product_id);
-    await saveProduct(env, product, sourceCopy(fetchedLive));
+    await saveProduct(env, product, sourceCopy(fetchedLive), undefined, fetchedLive);
     return json({ ok: true });
   }
 
@@ -189,6 +190,22 @@ async function route(request: Request, env: Env, url: URL, owner: string | null)
       throw new HttpError(404, "收藏里没有这个商品");
     }
     return json({ ok: true });
+  }
+
+  if (path === "/api/v1/notifications/telegram" && method === "GET") {
+    return json({ enabled: await telegramAlertsEnabled(env) });
+  }
+
+  if (path === "/api/v1/notifications/telegram" && method === "POST") {
+    const body = await readJson(request);
+    if (typeof body["enabled"] !== "boolean") {
+      throw new HttpError(400, "请明确开启或关闭提醒");
+    }
+    if (body["enabled"] === true && body["acknowledged"] !== true) {
+      throw new HttpError(400, "请先确认价格是第三方报告价，不是 Coles 官方核验价");
+    }
+    await setTelegramAlerts(env, body["enabled"], new Date().toISOString());
+    return json({ enabled: body["enabled"] });
   }
 
   const historyMatch = path.match(/^\/api\/v1\/prices\/listings\/([^/]+)\/history$/);
@@ -231,6 +248,6 @@ export default {
     }
   },
   async scheduled(_controller, env): Promise<void> {
-    await runMonitor(env);
+    await runScheduled(env);
   },
 } satisfies ExportedHandler<Env>;

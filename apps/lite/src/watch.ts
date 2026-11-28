@@ -1,7 +1,9 @@
 import type { MappedOmkarProduct } from "@easypws/adapters/omkar";
 import { COLES_MARRICKVILLE_STORE_ID } from "@easypws/adapters/omkar";
 import { STORE_NAME, type Env } from "./catalogue.js";
-import { alertText } from "./monitor.js";
+import { suppressQueuedForProduct } from "./alerts.js";
+import { commitWatchedPrice } from "./commit.js";
+import { alertText, sydneyDay } from "./monitor.js";
 
 export interface WatchItem {
   watchlistItemId: string;
@@ -141,15 +143,47 @@ export async function saveProduct(
   product: MappedOmkarProduct,
   copy: { sourceLabel: string; priceNote: string },
   targetPrice?: number,
+  live = false,
 ): Promise<string> {
   const now = new Date().toISOString();
   const existing = await env.DB.prepare(
-    "SELECT id, target_price FROM watched_products WHERE retailer_product_id = ? AND store_id = ?",
+    `SELECT id, target_price, current_price, monitoring_status
+     FROM watched_products WHERE retailer_product_id = ? AND store_id = ?`,
   )
     .bind(product.retailerProductId, COLES_MARRICKVILLE_STORE_ID)
-    .first<{ id: string; target_price: number | null }>();
+    .first<{ id: string; target_price: number | null; current_price: number | null; monitoring_status: string }>();
   const id = existing?.id ?? crypto.randomUUID();
   const target = targetPrice ?? existing?.target_price ?? null;
+  if (existing && existing.monitoring_status === "active" && typeof product.currentPrice === "number") {
+    await commitWatchedPrice(env, {
+      productId: existing.id,
+      storeId: COLES_MARRICKVILLE_STORE_ID,
+      name: product.name,
+      brand: product.brand,
+      size: product.size,
+      productUrl: product.productUrl,
+      imageUrl: product.imageUrl,
+      previousPrice: typeof existing.current_price === "number" ? existing.current_price : null,
+      price: product.currentPrice,
+      regularPrice: product.regularPrice,
+      promotionType: product.promotionType,
+      promotionKind: product.promotionKind,
+      inStock: product.inStock,
+      availabilityKnown: product.availabilityKnown,
+      sourceLabel: copy.sourceLabel,
+      priceNote: copy.priceNote,
+      sourceTimestamp: product.sourceTimestamp,
+      targetPrice: target,
+      expectedTarget: existing.target_price,
+      writeTarget: true,
+      countAttempt: false,
+      live,
+      at: now,
+      observationKey: crypto.randomUUID(),
+      day: sydneyDay(new Date(now)),
+    });
+    return existing.id;
+  }
   await env.DB.prepare(
     `INSERT INTO watched_products (
       id, retailer_product_id, store_id, name, brand, size, product_url, image_url,
@@ -214,6 +248,7 @@ export async function removeItem(env: Env, id: string): Promise<boolean> {
   if (!existing) {
     return false;
   }
+  await suppressQueuedForProduct(env, id, new Date().toISOString());
   await env.DB.prepare("DELETE FROM price_observations WHERE product_id = ?").bind(id).run();
   await env.DB.prepare("DELETE FROM alert_events WHERE product_id = ?").bind(id).run();
   await env.DB.prepare("DELETE FROM watched_products WHERE id = ?").bind(id).run();
@@ -226,7 +261,11 @@ export async function setStatus(env: Env, id: string, status: "active" | "paused
   )
     .bind(status, id)
     .run();
-  return (result.meta.changes ?? 0) > 0;
+  const updated = (result.meta.changes ?? 0) > 0;
+  if (updated && status === "paused") {
+    await suppressQueuedForProduct(env, id, new Date().toISOString());
+  }
+  return updated;
 }
 
 export async function setTarget(env: Env, id: string, targetPrice: number): Promise<boolean> {

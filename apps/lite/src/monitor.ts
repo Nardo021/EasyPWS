@@ -1,5 +1,7 @@
-import type { MappedOmkarProduct } from "@easypws/adapters/omkar";
+import { COLES_MARRICKVILLE_STORE_ID, type MappedOmkarProduct } from "@easypws/adapters/omkar";
+import { dispatchOutbox } from "./alerts.js";
 import { detailsReported, omkarMode, sourceCopy, type Env } from "./catalogue.js";
+import { commitWatchedPrice } from "./commit.js";
 
 export const DAILY_MONITOR_BUDGET = 15;
 
@@ -23,6 +25,23 @@ function money(value: number): string {
   return value.toFixed(2);
 }
 
+export async function runScheduled(env: Env, now = new Date()): Promise<void> {
+  let monitorError: unknown = null;
+  try {
+    await runMonitor(env, now);
+  } catch (error) {
+    monitorError = error;
+  }
+  try {
+    await dispatchOutbox(env, now);
+  } catch {
+    // A notification failure must not change the price-monitor result.
+  }
+  if (monitorError) {
+    throw monitorError;
+  }
+}
+
 export function alertText(
   kind: string,
   previous: number | null,
@@ -30,10 +49,10 @@ export function alertText(
   target: number | null,
 ): string {
   if (kind === "price_drop" && previous !== null) {
-    return `API 报告价下降 ${money(previous)} → ${money(price)}。不是官方核验价，未发送通知。`;
+    return `API 报告价下降 ${money(previous)} → ${money(price)}。不是官方核验价。`;
   }
   if (kind === "target_crossed" && target !== null) {
-    return `API 报告价达到目标价 ${money(target)}，现报 ${money(price)}。不是官方核验价，未发送通知。`;
+    return `API 报告价达到目标价 ${money(target)}，现报 ${money(price)}。不是官方核验价。`;
   }
   return "有一条未发送的价格记录。";
 }
@@ -45,7 +64,7 @@ export async function monitorUsage(env: Env, now = new Date()): Promise<{ budget
   return { budget: DAILY_MONITOR_BUDGET, usedToday: row?.n ?? 0 };
 }
 
-function reportedPrice(product: MappedOmkarProduct): number | null {
+export function reportedPrice(product: MappedOmkarProduct): number | null {
   if (product.quoteUse !== "review_only") {
     return null;
   }
@@ -63,25 +82,6 @@ async function recordAttempt(env: Env, day: string, productId: string, outcome: 
     .run();
 }
 
-async function insertAlert(
-  env: Env,
-  productId: string,
-  kind: "price_drop" | "target_crossed",
-  previous: number | null,
-  price: number,
-  target: number | null,
-  at: string,
-): Promise<void> {
-  const dedupe = `${productId}|${kind}|${previous === null ? "" : money(previous)}|${money(price)}|${target === null ? "" : money(target)}`;
-  await env.DB.prepare(
-    `INSERT OR IGNORE INTO alert_events (
-      id, product_id, kind, previous_price, price, target_price, dedupe_key, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-    .bind(crypto.randomUUID(), productId, kind, previous, price, target, dedupe, at)
-    .run();
-}
-
 async function applyReport(
   env: Env,
   row: ActiveRow,
@@ -89,50 +89,33 @@ async function applyReport(
   price: number,
   live: boolean,
   at: string,
-): Promise<void> {
-  const previous = typeof row.current_price === "number" ? row.current_price : null;
-  const target = typeof row.target_price === "number" ? row.target_price : null;
-  if (previous !== null && price < previous) {
-    await insertAlert(env, row.id, "price_drop", previous, price, target, at);
-  }
-  if (previous !== null && target !== null && previous > target && price <= target) {
-    await insertAlert(env, row.id, "target_crossed", previous, price, target, at);
-  }
+  day: string,
+): Promise<"committed" | "stale"> {
   const copy = sourceCopy(live);
-  await env.DB.prepare(
-    `UPDATE watched_products SET
-      name = ?, brand = ?, size = ?, product_url = ?, image_url = ?,
-      current_price = ?, regular_price = ?, promotion_type = ?, promotion_kind = ?,
-      in_stock = ?, availability_known = ?, source_label = ?, price_note = ?,
-      source_timestamp = ?, retrieved_at = ?, last_attempt_at = ?
-    WHERE id = ?`,
-  )
-    .bind(
-      product.name,
-      product.brand,
-      product.size,
-      product.productUrl,
-      product.imageUrl,
-      price,
-      product.regularPrice,
-      product.promotionType,
-      product.promotionKind,
-      product.inStock ? 1 : 0,
-      product.availabilityKnown ? 1 : 0,
-      copy.sourceLabel,
-      copy.priceNote,
-      product.sourceTimestamp,
-      at,
-      at,
-      row.id,
-    )
-    .run();
-  await env.DB.prepare(
-    `INSERT INTO price_observations (product_id, observed_at, price, regular_price, promotion_type)
-     VALUES (?, ?, ?, ?, ?)`,
-  )
-    .bind(row.id, at, price, product.regularPrice, product.promotionType)
-    .run();
+  return commitWatchedPrice(env, {
+    productId: row.id,
+    storeId: COLES_MARRICKVILLE_STORE_ID,
+    name: product.name,
+    brand: product.brand,
+    size: product.size,
+    productUrl: product.productUrl,
+    imageUrl: product.imageUrl,
+    previousPrice: typeof row.current_price === "number" ? row.current_price : null,
+    price,
+    regularPrice: product.regularPrice,
+    promotionType: product.promotionType,
+    promotionKind: product.promotionKind,
+    inStock: product.inStock,
+    availabilityKnown: product.availabilityKnown,
+    sourceLabel: copy.sourceLabel,
+    priceNote: copy.priceNote,
+    sourceTimestamp: product.sourceTimestamp,
+    targetPrice: typeof row.target_price === "number" ? row.target_price : null,
+    live,
+    at,
+    observationKey: crypto.randomUUID(),
+    day,
+  });
 }
 
 export async function runMonitor(env: Env, now = new Date()): Promise<{ checked: number; updated: number; preserved: number }> {
@@ -172,9 +155,12 @@ export async function runMonitor(env: Env, now = new Date()): Promise<{ checked:
       preserved += 1;
       continue;
     }
-    await applyReport(env, row, loaded.product, price, loaded.live, at);
-    await recordAttempt(env, day, row.id, "updated", at);
-    updated += 1;
+    const outcome = await applyReport(env, row, loaded.product, price, loaded.live, at, day);
+    if (outcome === "committed") {
+      updated += 1;
+    } else {
+      preserved += 1;
+    }
   }
   return { checked: rows.results.length, updated, preserved };
 }

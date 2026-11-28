@@ -71,6 +71,15 @@ input {
   padding: 0.75rem 0.9rem;
 }
 
+input.check {
+  flex: 0 0 auto;
+  min-width: 1rem;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.2rem;
+  padding: 0;
+}
+
 button {
   background: var(--accent);
   color: #062016;
