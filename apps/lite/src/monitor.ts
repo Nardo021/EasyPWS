@@ -10,6 +10,7 @@ interface ActiveRow {
   retailer_product_id: string;
   current_price: number | null;
   target_price: number | null;
+  revision: number;
 }
 
 export function sydneyDay(now = new Date()): string {
@@ -111,6 +112,7 @@ async function applyReport(
     priceNote: copy.priceNote,
     sourceTimestamp: product.sourceTimestamp,
     targetPrice: typeof row.target_price === "number" ? row.target_price : null,
+    expectedRevision: row.revision,
     live,
     at,
     observationKey: crypto.randomUUID(),
@@ -129,7 +131,7 @@ export async function runMonitor(env: Env, now = new Date()): Promise<{ checked:
     return { checked: 0, updated: 0, preserved: 0 };
   }
   const rows = await env.DB.prepare(
-    `SELECT id, retailer_product_id, current_price, target_price
+    `SELECT id, retailer_product_id, current_price, target_price, revision
      FROM watched_products
      WHERE monitoring_status = 'active'
      ORDER BY COALESCE(last_attempt_at, retrieved_at, '') ASC, created_at ASC

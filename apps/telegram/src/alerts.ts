@@ -222,7 +222,24 @@ function changes(result: { meta?: { changes?: number } } | undefined): number | 
   return value === 0 || value === 1 ? value : null;
 }
 
-async function storedState(env: TelegramEnv, transitionId: string): Promise<DeliveryResult> {
+const CLAIM_LEASE_MS = 60_000;
+
+function leaseUntil(now: Date): string {
+  return new Date(now.getTime() + CLAIM_LEASE_MS).toISOString();
+}
+
+async function reconcileExpiredClaims(env: TelegramEnv, now: Date): Promise<void> {
+  const at = now.toISOString();
+  await env.DB.prepare(
+    `UPDATE telegram_alert_deliveries
+     SET status = 'unknown', claim_token = NULL, updated_at = ?
+     WHERE status = 'claimed' AND (lease_until IS NULL OR lease_until < ?)`,
+  )
+    .bind(at, at)
+    .run();
+}
+
+async function persistedState(env: TelegramEnv, transitionId: string): Promise<DeliveryResult> {
   const existing = await env.DB.prepare(
     "SELECT status FROM telegram_alert_deliveries WHERE transition_id = ?",
   )
@@ -234,14 +251,6 @@ async function storedState(env: TelegramEnv, transitionId: string): Promise<Deli
   if (existing?.status === "failed") {
     return { state: "failed", claimed: true };
   }
-  if (existing?.status === "claimed") {
-    await env.DB.prepare(
-      `UPDATE telegram_alert_deliveries SET status = 'unknown', updated_at = ?
-       WHERE transition_id = ? AND status = 'claimed'`,
-    )
-      .bind(new Date().toISOString(), transitionId)
-      .run();
-  }
   return { state: "unknown", claimed: true };
 }
 
@@ -249,6 +258,7 @@ export async function deliverOwnerAlert(
   env: TelegramEnv,
   input: unknown,
   send: PlainSend = (text) => sendOwnerPlainText(env, text),
+  now = new Date(),
 ): Promise<DeliveryResult> {
   const alert = parseOwnerAlert(input);
   if (!alert) {
@@ -257,49 +267,56 @@ export async function deliverOwnerAlert(
   if (!configured(env) || !env.DB) {
     return { state: "unavailable", claimed: false };
   }
-  let claimed = false;
+  let claimToken: string | null = null;
   try {
-    const at = new Date().toISOString();
+    await reconcileExpiredClaims(env, now);
+    const at = now.toISOString();
+    claimToken = crypto.randomUUID();
     const inserted = await env.DB.prepare(
-      `INSERT OR IGNORE INTO telegram_alert_deliveries (transition_id, status, created_at, updated_at)
-       VALUES (?, 'claimed', ?, ?)`,
+      `INSERT OR IGNORE INTO telegram_alert_deliveries (
+        transition_id, status, claim_token, lease_until, created_at, updated_at
+      ) VALUES (?, 'claimed', ?, ?, ?, ?)`,
     )
-      .bind(alert.transitionId, at, at)
+      .bind(alert.transitionId, claimToken, leaseUntil(now), at, at)
       .run();
     const wrote = changes(inserted);
     if (wrote === null) {
       return { state: "unavailable", claimed: false };
     }
     if (wrote === 0) {
-      return storedState(env, alert.transitionId);
+      claimToken = null;
+      return persistedState(env, alert.transitionId);
     }
-    claimed = true;
     const outcome = await send(formatOwnerAlert(alert));
     const stored = outcome === "sent" || outcome === "failed" || outcome === "unknown" ? outcome : "unknown";
     try {
-      await env.DB.prepare(
-        `UPDATE telegram_alert_deliveries SET status = ?, updated_at = ?
-         WHERE transition_id = ? AND status = 'claimed'`,
+      const finished = await env.DB.prepare(
+        `UPDATE telegram_alert_deliveries
+         SET status = ?, claim_token = NULL, updated_at = ?
+         WHERE transition_id = ? AND status = 'claimed' AND claim_token = ?`,
       )
-        .bind(stored, new Date().toISOString(), alert.transitionId)
+        .bind(stored, new Date().toISOString(), alert.transitionId, claimToken)
         .run();
+      if (changes(finished) !== 1) {
+        return persistedState(env, alert.transitionId);
+      }
     } catch {
       return { state: "unknown", claimed: true };
     }
-    return { state: stored, claimed: true };
+    return persistedState(env, alert.transitionId);
   } catch {
-    if (!claimed) {
+    if (!claimToken) {
       return { state: "unavailable", claimed: false };
     }
     try {
       await env.DB.prepare(
-        `UPDATE telegram_alert_deliveries SET status = 'unknown', updated_at = ?
-         WHERE transition_id = ? AND status = 'claimed'`,
+        `UPDATE telegram_alert_deliveries SET status = 'unknown', claim_token = NULL, updated_at = ?
+         WHERE transition_id = ? AND status = 'claimed' AND claim_token = ?`,
       )
-        .bind(new Date().toISOString(), alert.transitionId)
+        .bind(new Date().toISOString(), alert.transitionId, claimToken)
         .run();
     } catch {
-      // The claim remains. A later call treats claimed as ambiguous and does not send again.
+      // The claim remains until its lease expires. A duplicate does not send or change it.
     }
     return { state: "unknown", claimed: true };
   }

@@ -1,5 +1,4 @@
 import { COLES_MARRICKVILLE_STORE_ID } from "@easypws/adapters/omkar";
-import { telegramAlertsEnabled } from "./alerts.js";
 import type { Env } from "./catalogue.js";
 
 export interface CommitInput {
@@ -21,6 +20,8 @@ export interface CommitInput {
   priceNote: string;
   sourceTimestamp: string | null;
   targetPrice: number | null;
+  /** Revision read with previousPrice. A mismatch makes the commit stale. */
+  expectedRevision: number;
   /** Target currently stored. Defaults to targetPrice. A mismatch makes the commit stale. */
   expectedTarget?: number | null;
   /** When true, store targetPrice after the compare-and-set matches. */
@@ -88,9 +89,16 @@ export async function commitWatchedPrice(env: Env, input: CommitInput): Promise<
     && safeName !== null
     && isColesProductUrl(input.productUrl)
     && input.storeId === COLES_MARRICKVILLE_STORE_ID;
-  const enabled = notify ? await telegramAlertsEnabled(env) : false;
+  const seen = await env.DB.prepare(
+    "SELECT 1 AS ok FROM price_observations WHERE observation_key = ?",
+  )
+    .bind(input.observationKey)
+    .first<{ ok: number }>();
+  if (seen) {
+    return "stale";
+  }
   const transitionId = input.observationKey;
-  const outboxStatus = enabled ? "queued" : "suppressed";
+  const token = crypto.randomUUID();
   const expectedTarget = input.expectedTarget === undefined ? input.targetPrice : input.expectedTarget;
   const countAttempt = input.countAttempt !== false;
   const results = await env.DB.batch([
@@ -99,12 +107,13 @@ export async function commitWatchedPrice(env: Env, input: CommitInput): Promise<
         name = ?, brand = ?, size = ?, product_url = ?, image_url = ?,
         current_price = ?, regular_price = ?, promotion_type = ?, promotion_kind = ?,
         in_stock = ?, availability_known = ?, source_label = ?, price_note = ?,
-        source_timestamp = ?, retrieved_at = ?,
+        source_timestamp = ?, retrieved_at = ?, revision = revision + 1,
         last_attempt_at = CASE WHEN ? = 1 THEN ? ELSE last_attempt_at END,
         target_price = CASE WHEN ? = 1 THEN ? ELSE target_price END
-      WHERE id = ? AND monitoring_status = 'active'
+      WHERE id = ? AND monitoring_status = 'active' AND revision = ?
         AND ((? IS NULL AND current_price IS NULL) OR current_price = ?)
-        AND ((? IS NULL AND target_price IS NULL) OR target_price = ?)`,
+        AND ((? IS NULL AND target_price IS NULL) OR target_price = ?)
+        AND NOT EXISTS (SELECT 1 FROM price_observations WHERE observation_key = ?)`,
     ).bind(
       input.name,
       input.brand,
@@ -126,10 +135,12 @@ export async function commitWatchedPrice(env: Env, input: CommitInput): Promise<
       flag(input.writeTarget === true),
       input.targetPrice,
       input.productId,
+      input.expectedRevision,
       previous,
       previous,
       expectedTarget,
       expectedTarget,
+      input.observationKey,
     ),
     env.DB.prepare(
       `INSERT INTO price_observations (
@@ -147,19 +158,18 @@ export async function commitWatchedPrice(env: Env, input: CommitInput): Promise<
       input.observationKey,
       input.observationKey,
     ),
+    env.DB.prepare("INSERT INTO commit_tokens (token) SELECT ? WHERE changes() = 1").bind(token),
     env.DB.prepare(
       `INSERT INTO monitor_attempts (day, product_id, outcome, created_at)
        SELECT ?, ?, 'updated', ?
-       WHERE ? = 1 AND EXISTS (
-         SELECT 1 FROM price_observations WHERE observation_key = ?
-       )`,
-    ).bind(input.day, input.productId, input.at, flag(countAttempt), input.observationKey),
+       WHERE ? = 1 AND EXISTS (SELECT 1 FROM commit_tokens WHERE token = ?)`,
+    ).bind(input.day, input.productId, input.at, flag(countAttempt), token),
     env.DB.prepare(
       `INSERT OR IGNORE INTO alert_events (
         id, product_id, kind, previous_price, price, target_price, dedupe_key, created_at
       )
       SELECT ?, ?, 'price_drop', ?, ?, ?, ?, ?
-      WHERE ? = 1 AND EXISTS (SELECT 1 FROM price_observations WHERE observation_key = ?)`,
+      WHERE ? = 1 AND EXISTS (SELECT 1 FROM commit_tokens WHERE token = ?)`,
     ).bind(
       crypto.randomUUID(),
       input.productId,
@@ -169,14 +179,14 @@ export async function commitWatchedPrice(env: Env, input: CommitInput): Promise<
       `v2|${input.observationKey}|price_drop`,
       input.at,
       flag(drop),
-      input.observationKey,
+      token,
     ),
     env.DB.prepare(
       `INSERT OR IGNORE INTO alert_events (
         id, product_id, kind, previous_price, price, target_price, dedupe_key, created_at
       )
       SELECT ?, ?, 'target_crossed', ?, ?, ?, ?, ?
-      WHERE ? = 1 AND EXISTS (SELECT 1 FROM price_observations WHERE observation_key = ?)`,
+      WHERE ? = 1 AND EXISTS (SELECT 1 FROM commit_tokens WHERE token = ?)`,
     ).bind(
       crypto.randomUUID(),
       input.productId,
@@ -186,7 +196,7 @@ export async function commitWatchedPrice(env: Env, input: CommitInput): Promise<
       `v2|${input.observationKey}|target_crossed`,
       input.at,
       flag(crossed),
-      input.observationKey,
+      token,
     ),
     env.DB.prepare(
       `INSERT INTO price_transitions (
@@ -195,6 +205,7 @@ export async function commitWatchedPrice(env: Env, input: CommitInput): Promise<
       )
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?
       WHERE ? = 1
+        AND EXISTS (SELECT 1 FROM commit_tokens WHERE token = ?)
         AND EXISTS (SELECT 1 FROM price_observations WHERE observation_key = ?)
         AND NOT EXISTS (SELECT 1 FROM price_transitions WHERE observation_key = ?)`,
     ).bind(
@@ -211,26 +222,40 @@ export async function commitWatchedPrice(env: Env, input: CommitInput): Promise<
       input.at,
       input.at,
       flag(notify),
+      token,
       input.observationKey,
       input.observationKey,
     ),
     env.DB.prepare(
-      `INSERT INTO notification_outbox (transition_id, status, created_at, updated_at)
-       SELECT ?, ?, ?, ?
-       WHERE EXISTS (SELECT 1 FROM price_transitions WHERE id = ?)
-         AND NOT EXISTS (SELECT 1 FROM notification_outbox WHERE transition_id = ?)`,
-    ).bind(transitionId, outboxStatus, input.at, input.at, transitionId, transitionId),
+      `INSERT INTO notification_outbox (
+        transition_id, status, consent_epoch, created_at, updated_at
+      )
+      SELECT ?, CASE WHEN pref.enabled = 1 THEN 'queued' ELSE 'suppressed' END, pref.epoch, ?, ?
+      FROM owner_alert_preference pref
+      WHERE pref.id = 1
+        AND EXISTS (SELECT 1 FROM commit_tokens WHERE token = ?)
+        AND EXISTS (SELECT 1 FROM price_transitions WHERE id = ?)
+        AND NOT EXISTS (SELECT 1 FROM notification_outbox WHERE transition_id = ?)`,
+    ).bind(transitionId, input.at, input.at, token, transitionId, transitionId),
+    env.DB.prepare("DELETE FROM commit_tokens WHERE token = ?").bind(token),
   ]);
-  if ((results[0]?.meta?.changes ?? 0) !== 1) {
-    if (countAttempt) {
-      await env.DB.batch([
-        env.DB.prepare("UPDATE watched_products SET last_attempt_at = ? WHERE id = ?").bind(input.at, input.productId),
-        env.DB.prepare(
-          "INSERT INTO monitor_attempts (day, product_id, outcome, created_at) VALUES (?, ?, 'preserved', ?)",
-        ).bind(input.day, input.productId, input.at),
-      ]);
-    }
-    return "stale";
+  const priceUpdated = (results[0]?.meta?.changes ?? 0) === 1;
+  const observationStored = (results[2]?.meta?.changes ?? 0) === 1;
+  if (priceUpdated && observationStored) {
+    return "committed";
   }
-  return "committed";
+  const replayed = await env.DB.prepare(
+    "SELECT 1 AS ok FROM price_observations WHERE observation_key = ?",
+  )
+    .bind(input.observationKey)
+    .first<{ ok: number }>();
+  if (!replayed && countAttempt) {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE watched_products SET last_attempt_at = ? WHERE id = ?").bind(input.at, input.productId),
+      env.DB.prepare(
+        "INSERT INTO monitor_attempts (day, product_id, outcome, created_at) VALUES (?, ?, 'preserved', ?)",
+      ).bind(input.day, input.productId, input.at),
+    ]);
+  }
+  return "stale";
 }

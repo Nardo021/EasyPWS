@@ -2,6 +2,7 @@ import type { AlertDeliveryResult, TelegramAlert } from "./alert-types.js";
 import type { Env } from "./catalogue.js";
 
 export const DISPATCH_LIMIT = 8;
+const CLAIM_LEASE_MS = 60_000;
 export type { AlertDeliveryResult, TelegramAlert };
 
 interface OutboxRow {
@@ -48,13 +49,17 @@ export async function telegramAlertsEnabled(env: Env): Promise<boolean> {
 
 export async function setTelegramAlerts(env: Env, enabled: boolean, at: string): Promise<void> {
   if (enabled) {
-    await env.DB.prepare("UPDATE owner_alert_preference SET enabled = 1, updated_at = ? WHERE id = 1")
+    await env.DB.prepare(
+      "UPDATE owner_alert_preference SET enabled = 1, epoch = epoch + 1, updated_at = ? WHERE id = 1",
+    )
       .bind(at)
       .run();
     return;
   }
   await env.DB.batch([
-    env.DB.prepare("UPDATE owner_alert_preference SET enabled = 0, updated_at = ? WHERE id = 1").bind(at),
+    env.DB.prepare(
+      "UPDATE owner_alert_preference SET enabled = 0, epoch = epoch + 1, updated_at = ? WHERE id = 1",
+    ).bind(at),
     env.DB.prepare(
       "UPDATE notification_outbox SET status = 'suppressed', updated_at = ? WHERE status = 'queued'",
     ).bind(at),
@@ -91,22 +96,53 @@ async function suppressInactive(env: Env, at: string): Promise<void> {
     .run();
 }
 
-async function claimSending(env: Env, transitionId: string, at: string): Promise<boolean> {
-  const result = await env.DB.prepare(
-    `UPDATE notification_outbox SET status = 'sending', updated_at = ?
-     WHERE transition_id = ? AND status = 'queued'`,
+function leaseUntil(now: Date): string {
+  return new Date(now.getTime() + CLAIM_LEASE_MS).toISOString();
+}
+
+async function reconcileAbandoned(env: Env, at: string): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE notification_outbox
+     SET status = 'unknown', claim_token = NULL, lease_until = NULL, updated_at = ?
+     WHERE status = 'sending' AND (lease_until IS NULL OR lease_until < ?)`,
   )
-    .bind(at, transitionId)
+    .bind(at, at)
+    .run();
+}
+
+async function claimSending(env: Env, transitionId: string, token: string, now: Date): Promise<boolean> {
+  const at = now.toISOString();
+  const result = await env.DB.prepare(
+    `UPDATE notification_outbox
+     SET status = 'sending', claim_token = ?, lease_until = ?, updated_at = ?
+     WHERE transition_id = ? AND status = 'queued'
+       AND consent_epoch = (SELECT epoch FROM owner_alert_preference WHERE id = 1 AND enabled = 1)
+       AND EXISTS (
+         SELECT 1 FROM price_transitions t
+         JOIN watched_products p ON p.id = t.product_id
+         WHERE t.id = notification_outbox.transition_id AND p.monitoring_status = 'active'
+       )`,
+  )
+    .bind(token, leaseUntil(now), at, transitionId)
     .run();
   return changes(result) === 1;
 }
 
-async function setOutbox(env: Env, transitionId: string, status: string, at: string): Promise<void> {
-  await env.DB.prepare(
-    "UPDATE notification_outbox SET status = ?, updated_at = ? WHERE transition_id = ? AND status = 'sending'",
+async function finishSending(
+  env: Env,
+  transitionId: string,
+  token: string,
+  status: string,
+  at: string,
+): Promise<boolean> {
+  const result = await env.DB.prepare(
+    `UPDATE notification_outbox
+     SET status = ?, claim_token = NULL, lease_until = NULL, updated_at = ?
+     WHERE transition_id = ? AND status = 'sending' AND claim_token = ?`,
   )
-    .bind(status, at, transitionId)
+    .bind(status, at, transitionId, token)
     .run();
+  return changes(result) === 1;
 }
 
 function deliveryStatus(result: AlertDeliveryResult): "sent" | "failed" | "unknown" | "queued" {
@@ -141,29 +177,31 @@ function parseDelivery(value: unknown): AlertDeliveryResult | null {
   return { state, claimed: record.claimed };
 }
 
-async function stillDeliverable(env: Env, transitionId: string): Promise<boolean> {
+async function currentEpoch(env: Env): Promise<number | null> {
   if (!(await preferenceOn(env))) {
-    return false;
+    return null;
   }
-  const row = await env.DB.prepare(
-    `SELECT p.monitoring_status AS status
-     FROM price_transitions t
-     JOIN watched_products p ON p.id = t.product_id
-     WHERE t.id = ?`,
-  )
-    .bind(transitionId)
-    .first<{ status: string }>();
-  return row?.status === "active";
+  const row = await env.DB.prepare("SELECT epoch FROM owner_alert_preference WHERE id = 1")
+    .first<{ epoch: number }>();
+  return typeof row?.epoch === "number" ? row.epoch : null;
 }
 
 export async function dispatchOutbox(env: Env, now = new Date()): Promise<{ inspected: number }> {
   const at = now.toISOString();
-  if (!(await preferenceOn(env))) {
-    await env.DB.prepare(
-      "UPDATE notification_outbox SET status = 'suppressed', updated_at = ? WHERE status = 'queued'",
-    )
-      .bind(at)
-      .run();
+  // A sending row whose lease has expired was abandoned. Mark it unknown and do not send it again.
+  // A request that already reached Telegram cannot be recalled by a later opt-out.
+  await reconcileAbandoned(env, at);
+  await env.DB.prepare(
+    `UPDATE notification_outbox
+     SET status = 'suppressed', updated_at = ?
+     WHERE status = 'queued' AND (
+       consent_epoch != (SELECT epoch FROM owner_alert_preference WHERE id = 1)
+       OR (SELECT enabled FROM owner_alert_preference WHERE id = 1) != 1
+     )`,
+  )
+    .bind(at)
+    .run();
+  if ((await currentEpoch(env)) === null) {
     return { inspected: 0 };
   }
   await suppressInactive(env, at);
@@ -178,6 +216,7 @@ export async function dispatchOutbox(env: Env, now = new Date()): Promise<{ insp
      JOIN price_transitions t ON t.id = o.transition_id
      JOIN watched_products p ON p.id = t.product_id
      WHERE o.status = 'queued' AND p.monitoring_status = 'active'
+       AND o.consent_epoch = (SELECT epoch FROM owner_alert_preference WHERE id = 1 AND enabled = 1)
      ORDER BY o.created_at ASC
      LIMIT ?`,
   )
@@ -187,26 +226,40 @@ export async function dispatchOutbox(env: Env, now = new Date()): Promise<{ insp
   let inspected = 0;
   for (const row of queued.results) {
     inspected += 1;
-    const stamp = new Date().toISOString();
-    if (!(await claimSending(env, row.transition_id, stamp))) {
-      continue;
-    }
-    if (!(await stillDeliverable(env, row.transition_id))) {
-      await setOutbox(env, row.transition_id, "suppressed", stamp);
+    const token = crypto.randomUUID();
+    const claimedAt = new Date();
+    if (!(await claimSending(env, row.transition_id, token, claimedAt))) {
       continue;
     }
     const alert = buildAlert(row);
     if (!alert) {
-      await setOutbox(env, row.transition_id, "failed", stamp);
+      await finishSending(env, row.transition_id, token, "failed", claimedAt.toISOString());
       continue;
     }
+    let parsed: AlertDeliveryResult | null;
     try {
-      const parsed = parseDelivery(await binding.deliver(alert));
-      const next = parsed ? deliveryStatus(parsed) : "unknown";
-      await setOutbox(env, row.transition_id, next, new Date().toISOString());
+      parsed = parseDelivery(await binding.deliver(alert));
     } catch {
-      await setOutbox(env, row.transition_id, "unknown", new Date().toISOString());
+      parsed = { state: "unknown", claimed: true };
     }
+    const stamp = new Date().toISOString();
+    if (parsed?.state === "unavailable" && !parsed.claimed) {
+      const requeued = await env.DB.prepare(
+        `UPDATE notification_outbox
+         SET status = 'queued', claim_token = NULL, lease_until = NULL, updated_at = ?
+         WHERE transition_id = ? AND status = 'sending' AND claim_token = ?
+           AND consent_epoch = (SELECT epoch FROM owner_alert_preference WHERE id = 1 AND enabled = 1)`,
+      )
+        .bind(stamp, row.transition_id, token)
+        .run();
+      if (changes(requeued) !== 1) {
+        await finishSending(env, row.transition_id, token, "suppressed", stamp);
+      }
+      continue;
+    }
+    const next = parsed ? deliveryStatus(parsed) : "unknown";
+    const terminal = next === "queued" ? "unknown" : next;
+    await finishSending(env, row.transition_id, token, terminal, stamp);
   }
   return { inspected };
 }

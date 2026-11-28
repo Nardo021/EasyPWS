@@ -138,76 +138,189 @@ export async function getItem(env: Env, id: string): Promise<WatchItem | null> {
   return row ? toWatchItem(env, row) : null;
 }
 
+export type ManualOutcome = "committed" | "stale" | "preserved" | "missing";
+
+interface StoredWatch {
+  id: string;
+  revision: number;
+  target_price: number | null;
+  current_price: number | null;
+  monitoring_status: string;
+}
+
+export interface RefreshSnapshot {
+  id: string;
+  retailerProductId: string;
+  revision: number;
+  currentPrice: number | null;
+  targetPrice: number | null;
+  monitoringStatus: string;
+}
+
+function usablePrice(product: MappedOmkarProduct): number | null {
+  if (product.quoteUse !== "review_only") {
+    return null;
+  }
+  if (typeof product.currentPrice !== "number" || !Number.isFinite(product.currentPrice) || product.currentPrice < 0) {
+    return null;
+  }
+  return product.currentPrice;
+}
+
+export async function readSkuSnapshot(env: Env, retailerProductId: string): Promise<StoredWatch | null> {
+  return env.DB.prepare(
+    `SELECT id, revision, target_price, current_price, monitoring_status
+     FROM watched_products WHERE retailer_product_id = ? AND store_id = ?`,
+  )
+    .bind(retailerProductId, COLES_MARRICKVILLE_STORE_ID)
+    .first<StoredWatch>();
+}
+
+async function commitExisting(
+  env: Env,
+  existing: StoredWatch,
+  product: MappedOmkarProduct,
+  copy: { sourceLabel: string; priceNote: string },
+  targetPrice: number | null | undefined,
+  live: boolean,
+  at: string,
+): Promise<ManualOutcome> {
+  const price = usablePrice(product);
+  if (price === null) {
+    return "preserved";
+  }
+  if (existing.monitoring_status !== "active") {
+    return "preserved";
+  }
+  const target = targetPrice === undefined ? existing.target_price : targetPrice;
+  return commitWatchedPrice(env, {
+    productId: existing.id,
+    storeId: COLES_MARRICKVILLE_STORE_ID,
+    name: product.name,
+    brand: product.brand,
+    size: product.size,
+    productUrl: product.productUrl,
+    imageUrl: product.imageUrl,
+    previousPrice: typeof existing.current_price === "number" ? existing.current_price : null,
+    price,
+    regularPrice: product.regularPrice,
+    promotionType: product.promotionType,
+    promotionKind: product.promotionKind,
+    inStock: product.inStock,
+    availabilityKnown: product.availabilityKnown,
+    sourceLabel: copy.sourceLabel,
+    priceNote: copy.priceNote,
+    sourceTimestamp: product.sourceTimestamp,
+    targetPrice: target,
+    expectedTarget: existing.target_price,
+    expectedRevision: existing.revision,
+    writeTarget: targetPrice !== undefined,
+    countAttempt: false,
+    live,
+    at,
+    observationKey: crypto.randomUUID(),
+    day: sydneyDay(new Date(at)),
+  });
+}
+
+export async function readRefreshSnapshot(env: Env, id: string): Promise<RefreshSnapshot | null> {
+  const row = await env.DB.prepare(
+    `SELECT id, retailer_product_id, revision, current_price, target_price, monitoring_status
+     FROM watched_products WHERE id = ?`,
+  )
+    .bind(id)
+    .first<{
+      id: string;
+      retailer_product_id: string;
+      revision: number;
+      current_price: number | null;
+      target_price: number | null;
+      monitoring_status: string;
+    }>();
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.id,
+    retailerProductId: row.retailer_product_id,
+    revision: row.revision,
+    currentPrice: row.current_price,
+    targetPrice: row.target_price,
+    monitoringStatus: row.monitoring_status,
+  };
+}
+
+export async function applyRefresh(
+  env: Env,
+  snapshot: RefreshSnapshot,
+  product: MappedOmkarProduct,
+  copy: { sourceLabel: string; priceNote: string },
+  live: boolean,
+): Promise<ManualOutcome> {
+  const still = await env.DB.prepare("SELECT id FROM watched_products WHERE id = ?")
+    .bind(snapshot.id)
+    .first<{ id: string }>();
+  if (!still) {
+    return "missing";
+  }
+  const price = usablePrice(product);
+  if (price === null) {
+    return "preserved";
+  }
+  return commitWatchedPrice(env, {
+    productId: snapshot.id,
+    storeId: COLES_MARRICKVILLE_STORE_ID,
+    name: product.name,
+    brand: product.brand,
+    size: product.size,
+    productUrl: product.productUrl,
+    imageUrl: product.imageUrl,
+    previousPrice: snapshot.currentPrice,
+    price,
+    regularPrice: product.regularPrice,
+    promotionType: product.promotionType,
+    promotionKind: product.promotionKind,
+    inStock: product.inStock,
+    availabilityKnown: product.availabilityKnown,
+    sourceLabel: copy.sourceLabel,
+    priceNote: copy.priceNote,
+    sourceTimestamp: product.sourceTimestamp,
+    targetPrice: snapshot.targetPrice,
+    expectedTarget: snapshot.targetPrice,
+    expectedRevision: snapshot.revision,
+    writeTarget: false,
+    countAttempt: false,
+    live,
+    at: new Date().toISOString(),
+    observationKey: crypto.randomUUID(),
+    day: sydneyDay(),
+  });
+}
+
 export async function saveProduct(
   env: Env,
   product: MappedOmkarProduct,
   copy: { sourceLabel: string; priceNote: string },
   targetPrice?: number,
   live = false,
-): Promise<string> {
+  known?: StoredWatch | null,
+): Promise<{ id: string; outcome: ManualOutcome }> {
   const now = new Date().toISOString();
-  const existing = await env.DB.prepare(
-    `SELECT id, target_price, current_price, monitoring_status
-     FROM watched_products WHERE retailer_product_id = ? AND store_id = ?`,
-  )
-    .bind(product.retailerProductId, COLES_MARRICKVILLE_STORE_ID)
-    .first<{ id: string; target_price: number | null; current_price: number | null; monitoring_status: string }>();
-  const id = existing?.id ?? crypto.randomUUID();
-  const target = targetPrice ?? existing?.target_price ?? null;
-  if (existing && existing.monitoring_status === "active" && typeof product.currentPrice === "number") {
-    await commitWatchedPrice(env, {
-      productId: existing.id,
-      storeId: COLES_MARRICKVILLE_STORE_ID,
-      name: product.name,
-      brand: product.brand,
-      size: product.size,
-      productUrl: product.productUrl,
-      imageUrl: product.imageUrl,
-      previousPrice: typeof existing.current_price === "number" ? existing.current_price : null,
-      price: product.currentPrice,
-      regularPrice: product.regularPrice,
-      promotionType: product.promotionType,
-      promotionKind: product.promotionKind,
-      inStock: product.inStock,
-      availabilityKnown: product.availabilityKnown,
-      sourceLabel: copy.sourceLabel,
-      priceNote: copy.priceNote,
-      sourceTimestamp: product.sourceTimestamp,
-      targetPrice: target,
-      expectedTarget: existing.target_price,
-      writeTarget: true,
-      countAttempt: false,
-      live,
-      at: now,
-      observationKey: crypto.randomUUID(),
-      day: sydneyDay(new Date(now)),
-    });
-    return existing.id;
+  const existing = known === undefined ? await readSkuSnapshot(env, product.retailerProductId) : known;
+  if (existing) {
+    const outcome = await commitExisting(env, existing, product, copy, targetPrice, live, now);
+    return { id: existing.id, outcome };
   }
-  await env.DB.prepare(
+  const id = crypto.randomUUID();
+  const price = usablePrice(product);
+  const inserted = await env.DB.prepare(
     `INSERT INTO watched_products (
       id, retailer_product_id, store_id, name, brand, size, product_url, image_url,
       current_price, regular_price, promotion_type, promotion_kind, in_stock, availability_known,
       source_label, price_note, source_timestamp, retrieved_at, target_price, monitoring_status,
-      notification_eligible, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?)
-    ON CONFLICT(retailer_product_id, store_id) DO UPDATE SET
-      name = excluded.name,
-      brand = excluded.brand,
-      size = excluded.size,
-      product_url = excluded.product_url,
-      image_url = excluded.image_url,
-      current_price = excluded.current_price,
-      regular_price = excluded.regular_price,
-      promotion_type = excluded.promotion_type,
-      promotion_kind = excluded.promotion_kind,
-      in_stock = excluded.in_stock,
-      availability_known = excluded.availability_known,
-      source_label = excluded.source_label,
-      price_note = excluded.price_note,
-      source_timestamp = excluded.source_timestamp,
-      retrieved_at = excluded.retrieved_at,
-      target_price = excluded.target_price`,
+      notification_eligible, created_at, revision
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, ?, 0)
+    ON CONFLICT(retailer_product_id, store_id) DO NOTHING`,
   )
     .bind(
       id,
@@ -218,7 +331,7 @@ export async function saveProduct(
       product.size,
       product.productUrl,
       product.imageUrl,
-      product.currentPrice,
+      price,
       product.regularPrice,
       product.promotionType,
       product.promotionKind,
@@ -228,19 +341,32 @@ export async function saveProduct(
       copy.priceNote,
       product.sourceTimestamp,
       now,
-      target,
+      targetPrice ?? null,
       now,
     )
     .run();
-  if (typeof product.currentPrice === "number") {
+  if ((inserted.meta.changes ?? 0) !== 1) {
+    const winner = await readSkuSnapshot(env, product.retailerProductId);
+    if (!winner) {
+      return { id, outcome: "missing" };
+    }
+    const moved = winner.revision !== 0
+      || (typeof winner.current_price === "number" && winner.current_price !== price);
+    if (moved) {
+      return { id: winner.id, outcome: "stale" };
+    }
+    const outcome = await commitExisting(env, winner, product, copy, targetPrice, live, now);
+    return { id: winner.id, outcome };
+  }
+  if (price !== null) {
     await env.DB.prepare(
       `INSERT INTO price_observations (product_id, observed_at, price, regular_price, promotion_type)
        VALUES (?, ?, ?, ?, ?)`,
     )
-      .bind(id, now, product.currentPrice, product.regularPrice, product.promotionType)
+      .bind(id, now, price, product.regularPrice, product.promotionType)
       .run();
   }
-  return id;
+  return { id, outcome: "committed" };
 }
 
 export async function removeItem(env: Env, id: string): Promise<boolean> {
@@ -257,7 +383,7 @@ export async function removeItem(env: Env, id: string): Promise<boolean> {
 
 export async function setStatus(env: Env, id: string, status: "active" | "paused"): Promise<boolean> {
   const result = await env.DB.prepare(
-    "UPDATE watched_products SET monitoring_status = ? WHERE id = ?",
+    "UPDATE watched_products SET monitoring_status = ?, revision = revision + 1 WHERE id = ?",
   )
     .bind(status, id)
     .run();
@@ -269,7 +395,9 @@ export async function setStatus(env: Env, id: string, status: "active" | "paused
 }
 
 export async function setTarget(env: Env, id: string, targetPrice: number): Promise<boolean> {
-  const result = await env.DB.prepare("UPDATE watched_products SET target_price = ? WHERE id = ?")
+  const result = await env.DB.prepare(
+    "UPDATE watched_products SET target_price = ?, revision = revision + 1 WHERE id = ?",
+  )
     .bind(targetPrice, id)
     .run();
   return (result.meta.changes ?? 0) > 0;

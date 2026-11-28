@@ -217,7 +217,7 @@ export default function HomePage() {
         <section className="panel">
           <h2 className="section-title">Telegram 价格提醒</h2>
           <p className="meta">
-            默认关闭。开启后，只把之后的降价发到已绑定的所有者私聊。价格是第三方 API 报告价，不是 Coles 官方核验价。关闭会停掉尚未发出的提醒，已有记录会保留。
+            默认关闭。开启后，只把之后的降价发到已绑定的所有者私聊。价格是第三方 API 报告价，不是 Coles 官方核验价。关闭会停掉尚未发出的提醒，已有记录会保留。已经交给 Telegram 的那一条无法撤回。关闭期间的降价在再次开启后不会补发。
           </p>
           <p className="meta">当前：{alertsEnabled ? "已开启" : "已关闭"}</p>
           {alertsEnabled ? null : (

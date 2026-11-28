@@ -14,7 +14,7 @@ EasyPWS V2 is a **private, owner-only Coles price watcher**. Keep the Worker + D
 | **Phase 1E-A Git baseline** | **Completed, main CI success (2026-11-23)** | PR #3–#7 merged sequentially, main CI #45164141858 passed; no production redeploy. |
 | **Phase 1E-B Automatic checks** | **CRON_CONFIGURED / LIVE_CHECK_PENDING** | PR #8 merged, main CI #45167271907 passed, remote one daily Cron 22:00 UTC verified. Add a genuine watchlist item and confirm a real scheduled check. |
 | Phase 1F-A Telegram webhook | Merged on main `90a6e23` | Isolated owner webhook only |
-| Phase 1F-B Telegram price alerts | Source drafted, not deployed | Draft PR. No production migration, new Cron, secret change, or real Telegram send |
+| Phase 1F-B Telegram price alerts | Source drafted, R2 consistency fix not deployed | Draft PR #11. No production migration, new Cron, secret change, or real Telegram send |
 | Phase 2A Mobile PWA | Proposed | Mobile usability, install manifest/icons; don't claim installable PWA before validation |
 | Phase 2B Watchlist-first specials | Proposed | Useful watched-product deals, no indiscriminate full-catalog scrape |
 | Phase 3 Other stores/providers | Deferred | Real need, quota/cost check, evidence before expansion |

@@ -101,6 +101,7 @@ function input(overrides: Partial<CommitInput> = {}): CommitInput {
     at: "2026-11-28T02:00:00.000Z",
     observationKey: crypto.randomUUID(),
     day: "2026-11-28",
+    expectedRevision: 0,
     ...overrides,
   };
 }
@@ -132,10 +133,12 @@ test("local D1 commits transitions atomically and delivers once", { timeout: 180
     "0001_watch.sql",
     "0002_monitor.sql",
     "0003_alert_outbox.sql",
+    "0004_alert_consistency.sql",
   ]);
   const telegram = await localD1("telegram", resolve(here, "../../telegram/migrations"), [
     "0001_webhook_receipts.sql",
     "0002_alert_deliveries.sql",
+    "0003_alert_lease.sql",
   ]);
   const db = price.db;
   const telegramEnv: TelegramEnv = {
@@ -203,6 +206,7 @@ test("local D1 commits transitions atomically and delivers once", { timeout: 180
       price: 5,
       at: "2026-11-28T04:00:00.000Z",
       observationKey: "22222222-2222-4222-8222-222222222222",
+      expectedRevision: 1,
     })), "committed");
     assert.equal(await count(db, "SELECT COUNT(*) AS n FROM price_transitions"), 1);
 
@@ -211,6 +215,7 @@ test("local D1 commits transitions atomically and delivers once", { timeout: 180
       price: 3,
       at: "2026-11-28T05:00:00.000Z",
       observationKey: "33333333-3333-4333-8333-333333333333",
+      expectedRevision: 2,
     });
     assert.equal(await commitWatchedPrice(env, second), "committed");
     assert.equal(await count(db, "SELECT COUNT(*) AS n FROM price_transitions"), 2);
@@ -229,6 +234,7 @@ test("local D1 commits transitions atomically and delivers once", { timeout: 180
       price: 3,
       at: "2026-11-28T05:05:00.000Z",
       observationKey: "abababab-abab-4bab-8bab-abababababab",
+      expectedRevision: 3,
     })), "committed");
     assert.equal(await count(db, "SELECT COUNT(*) AS n FROM price_transitions"), 2);
 
@@ -310,6 +316,7 @@ test("local D1 commits transitions atomically and delivers once", { timeout: 180
         live: false,
         at: "2026-11-28T05:40:00.000Z",
         observationKey: "77777777-7777-4777-8777-777777777777",
+        expectedRevision: 1,
       })),
       commitWatchedPrice(env, input({
         productId: "fresh",
@@ -318,6 +325,7 @@ test("local D1 commits transitions atomically and delivers once", { timeout: 180
         live: false,
         at: "2026-11-28T05:41:00.000Z",
         observationKey: "88888888-8888-4888-8888-888888888888",
+        expectedRevision: 1,
       })),
     ]);
     assert.equal(raced.filter((item) => item === "committed").length, 1);
@@ -535,10 +543,13 @@ test("local D1 commits transitions atomically and delivers once", { timeout: 180
 
     const missing = { DB: db } as Env;
     await setTelegramAlerts(missing, true, "2026-11-28T08:00:00.000Z");
+    const currentEpoch = await db.prepare("SELECT epoch FROM owner_alert_preference WHERE id = 1")
+      .first<{ epoch: number }>();
     await db.prepare(
-      `UPDATE notification_outbox SET status = 'queued', updated_at = '2026-11-28T08:00:00.000Z'
+      `UPDATE notification_outbox
+       SET status = 'queued', consent_epoch = ?, updated_at = '2026-11-28T08:00:00.000Z'
        WHERE transition_id = ?`,
-    ).bind(second.observationKey).run();
+    ).bind(currentEpoch?.epoch ?? 0, second.observationKey).run();
     await dispatchOutbox(missing);
     const leftQueued = await db.prepare("SELECT status FROM notification_outbox WHERE transition_id = ?")
       .bind(second.observationKey)
@@ -554,8 +565,9 @@ test("local D1 commits transitions atomically and delivers once", { timeout: 180
         ) VALUES (?, ?, 'milk', '4166', 'Coles Full Cream Milk', ?, 9, 8, NULL, 1, 0, ?, ?)`,
       ).bind(key, key, MILK_URL, `2026-11-28T09:00:0${index}.000Z`, `2026-11-28T09:00:0${index}.000Z`).run();
       await db.prepare(
-        "INSERT INTO notification_outbox (transition_id, status, created_at, updated_at) VALUES (?, 'queued', ?, ?)",
-      ).bind(key, `2026-11-28T09:00:0${index}.000Z`, `2026-11-28T09:00:0${index}.000Z`).run();
+        `INSERT INTO notification_outbox (transition_id, status, consent_epoch, created_at, updated_at)
+         VALUES (?, 'queued', ?, ?, ?)`,
+      ).bind(key, currentEpoch?.epoch ?? 0, `2026-11-28T09:00:0${index}.000Z`, `2026-11-28T09:00:0${index}.000Z`).run();
     }
     const bounded = await dispatchOutbox(env);
     assert.equal(bounded.inspected, DISPATCH_LIMIT);

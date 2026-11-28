@@ -19,6 +19,9 @@ import {
   history,
   listItems,
   removeItem,
+  applyRefresh,
+  readRefreshSnapshot,
+  readSkuSnapshot,
   saveProduct,
   setStatus,
   setTarget,
@@ -135,24 +138,28 @@ async function route(request: Request, env: Env, url: URL, owner: string | null)
       throw new HttpError(400, "请粘贴 coles.com.au 商品链接");
     }
     const target = typeof body["targetPrice"] === "number" ? body["targetPrice"] : undefined;
+    const known = await readSkuSnapshot(env, productId);
     const { product, live: fetchedLive } = await detailsReported(env, productId);
-    const id = await saveProduct(env, product, sourceCopy(fetchedLive), target, fetchedLive);
-    return json({ ok: true, watchlistItemId: id });
+    const saved = await saveProduct(env, product, sourceCopy(fetchedLive), target, fetchedLive, known);
+    const accepted = saved.outcome === "committed" || saved.outcome === "preserved";
+    return json({ ok: accepted, watchlistItemId: saved.id, outcome: saved.outcome }, accepted ? 200 : 409);
   }
 
   const refreshId = itemId(path, "/refresh");
   if (method === "POST" && refreshId) {
-    const current = await env.DB.prepare(
-      "SELECT retailer_product_id FROM watched_products WHERE id = ?",
-    )
-      .bind(refreshId)
-      .first<{ retailer_product_id: string }>();
-    if (!current) {
+    const snapshot = await readRefreshSnapshot(env, refreshId);
+    if (!snapshot) {
       throw new HttpError(404, "收藏里没有这个商品");
     }
-    const { product, live: fetchedLive } = await detailsReported(env, current.retailer_product_id);
-    await saveProduct(env, product, sourceCopy(fetchedLive), undefined, fetchedLive);
-    return json({ ok: true });
+    const { product, live: fetchedLive } = await detailsReported(env, snapshot.retailerProductId);
+    const outcome = await applyRefresh(env, snapshot, product, sourceCopy(fetchedLive), fetchedLive);
+    if (outcome === "missing") {
+      throw new HttpError(404, "收藏里没有这个商品");
+    }
+    if (outcome !== "committed") {
+      return json({ ok: false, outcome }, 409);
+    }
+    return json({ ok: true, outcome });
   }
 
   const statusId = itemId(path, "/status");
